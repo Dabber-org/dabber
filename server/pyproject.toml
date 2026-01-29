@@ -1,0 +1,18 @@
+[project]
+name = "server"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "chromadb[fastembed]>=1.1.1",
+  "crawlee[beautifulsoup,playwright]>=1.0.2",
+  "playwright>=1.55.0",
+  "duckdb>=1.4.1",
+  "fastmcp>=2.12.4",
+  "ollama>=0.6.0",
+  "fastembed>=0.3.3",
+  "pydantic-settings>=2.11.0",
+  "requests>=2.32.0",
+  "openai>=1.0.0",
+]

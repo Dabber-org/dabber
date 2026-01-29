@@ -1,0 +1,38 @@
+version: "3"
+
+tasks:
+  # ─── CLIENT ────────────────────────────────────────────────
+  client:install:
+    desc: Install client dependencies using Bun
+    dir: ./client
+    cmds:
+      - bun install
+
+  client:dev:
+    desc: Run MCP client in development mode
+    dir: ./client
+    cmds:
+      - bun run dev
+
+  # ─── SERVER ────────────────────────────────────────────────
+  server:setup:
+    desc: Create venv (if missing) and sync dependencies
+    dir: ./server
+    cmds:
+      - test -d .venv || uv venv
+      - uv sync
+
+  server:run:
+    desc: Run MCP server via FastMCP HTTP transport
+    dir: ./server
+    cmds:
+      - .venv/bin/fastmcp run server.py:mcp --transport http --port 8000
+
+  # ─── COMBINED TASKS ────────────────────────────────────────
+  dev:
+    desc: Run both MCP client and server concurrently
+    deps: [client:install, server:setup]
+    cmds:
+      - task -p client:dev &
+      - task -p server:run
+    silent: false

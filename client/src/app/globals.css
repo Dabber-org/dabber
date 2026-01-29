@@ -1,0 +1,257 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --card: #ffffff;
+  --card-foreground: #171717;
+  --popover: #ffffff;
+  --popover-foreground: #171717;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #2563eb;
+  --radius: 0.5rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #fafafa;
+  --card: #000000;
+  --card-foreground: #fafafa;
+  --popover: #0a0a0a;
+  --popover-foreground: #fafafa;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #1e293b;
+  --secondary-foreground: #f1f5f9;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f1f5f9;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #1e293b;
+  --input: #1e293b;
+  --ring: #3b82f6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+#__next {
+  height: 100%;
+}
+
+/* Animation keyframes for chat widget */
+@keyframes chatSlideIn {
+  from {
+    transform: scale(0.8) translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes chatSlideOut {
+  from {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.9) translateY(10px);
+    opacity: 0;
+  }
+}
+
+@keyframes bubbleBounce {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1) rotate(5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes bubbleExit {
+  0% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.8) rotate(10deg);
+    opacity: 0;
+  }
+}
+
+/* Backdrop blur animation */
+@keyframes backdropFadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+  }
+}
+
+/* Enhanced transitions for smooth interactions */
+.widget-transition {
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.backdrop-transition {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Custom subtle pulse animation */
+@keyframes subtlePulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.02);
+  }
+}
+
+.subtle-pulse {
+  animation: subtlePulse 3s ease-in-out infinite;
+}
+
+/* Custom scrollbar styles */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  margin: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  
+  background: transparent;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  border-radius: 3px;
+  opacity: 0.5;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--foreground);
+  opacity: 0.7;
+}
+
+/* Custom scrollbar styles */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Firefox scrollbar */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+/* Streaming text animations */
+@keyframes streamBlur {
+  0% {
+    filter: blur(4px);
+    opacity: 0.5;
+  }
+  50% {
+    filter: blur(2px);
+    opacity: 0.7;
+  }
+  100% {
+    filter: blur(0px);
+    opacity: 1;
+  }
+}
+
+.stream-word-enter {
+  animation: streamBlur 0.6s ease-out forwards;
+}
+
+/* Word reveal animation */
+@keyframes wordReveal {
+  0% {
+    transform: translateY(10px);
+    filter: blur(3px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    filter: blur(0px);
+    opacity: 1;
+  }
+}

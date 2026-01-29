@@ -1,0 +1,80 @@
+export const typographyTokens = {
+  fontMediumBase: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 500,
+    fontSize: "1rem",
+    lineHeight: "120%",
+  },
+  fontDemi5xl: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 600,
+    fontSize: "3rem",
+    lineHeight: "120%",
+  },
+  fontMediumXl: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 500,
+    fontSize: "1.25rem",
+    lineHeight: "120%",
+  },
+  fontRegularBase: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 400,
+    fontSize: "1rem",
+    lineHeight: "120%",
+  },
+  fontDemi3xl: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 600,
+    fontSize: "1.875rem",
+    lineHeight: "120%",
+  },
+  fontDemi2xl: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 600,
+    fontSize: "1.5rem",
+    lineHeight: "120%",
+  },
+  fontMediumXs: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 500,
+    fontSize: "0.75rem",
+    lineHeight: "120%",
+  },
+  fontMediumSm: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 500,
+    fontSize: "0.875rem",
+    lineHeight: "120%",
+  },
+  fontDemiSm: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 600,
+    fontSize: "0.875rem",
+    lineHeight: "120%",
+  },
+  fontRegularSm: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 400,
+    fontSize: "0.875rem",
+    lineHeight: "120%",
+  },
+  fontDemiXl: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 600,
+    fontSize: "1.25rem",
+    lineHeight: "120%",
+  },
+  fontDemiBase: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 600,
+    fontSize: "1rem",
+    lineHeight: "120%",
+  },
+  fontDemi3_5xs: {
+    fontFamily: "'Avenir Next Arabic', sans-serif",
+    fontWeight: 700,
+    fontSize: "1rem",
+    lineHeight: "150%",
+  },
+};

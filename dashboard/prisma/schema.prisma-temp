@@ -1,0 +1,101 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id
+  name          String?
+  email         String         @unique
+  emailVerified Boolean?       @default(false)
+  role          String?
+  image         String?
+  banReason     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+  verifications Verification[]
+  agents        Agent[]
+  banned        Boolean?       @default(false)
+  banExpires    DateTime?
+
+  @@map("User")
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  token     String
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  impersonatedBy String?
+
+  @@index([userId])
+  @@index([token])
+  @@map("Session")
+}
+
+model Account {
+  id                    String    @id
+  userId                String
+  accountId             String?
+  providerId            String?
+  accessToken           String?
+  refreshToken          String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  idToken               String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("Account")
+}
+
+model Verification {
+  id         String   @id
+  userId     String
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("Verification")
+}
+
+model Agent {
+  id                  String   @id @default(uuid())
+  userId              String
+  status              String
+  prompt              String?
+  vectorDbUrl         String?  @map("vectorDB_URL")
+  openApiUrl          String?  @map("openAPI_URL")
+  name                String
+  languages           String[]
+  welcomeMessages     String[]
+  scrapingPages       String[] @default([])
+  scrapingPagesAmount Int[]    @default([])
+  scrapingDepth       Int[]    @default([])
+  scrapingUrls        String[] @default([]) @map("scrapingURLs")
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("Agent")
+}

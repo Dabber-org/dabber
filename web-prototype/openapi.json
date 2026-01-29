@@ -1,0 +1,228 @@
+{
+  "openapi": "3.0.0",
+  "info": { "title": "ElectroStore API", "version": "1.0.0" },
+  "paths": {
+    "/api/cart/{id}": {
+      "patch": {
+        "description": "Updates the cart item by id",
+        "responses": { "200": { "description": "Cart item updated" } }
+      }
+    },
+    "/api/cart": {
+      "get": {
+        "summary": "Get cart items",
+        "description": "Retrieve all items in the shopping cart",
+        "tags": ["Cart"],
+        "responses": {
+          "200": {
+            "description": "Cart items retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/CartItem" } } }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add item to cart",
+        "description": "Add a product to the shopping cart with specified quantity",
+        "tags": ["Cart"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["productId", "quantity"],
+                "properties": {
+                  "productId": { "type": "string", "description": "ID of the product to add" },
+                  "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 1,
+                    "description": "Quantity of the product"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Item added to cart successfully",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/CartItem" } } }
+              }
+            }
+          },
+          "400": { "description": "Invalid request data" }
+        }
+      }
+    },
+    "/api/orders/{id}": {
+      "get": {
+        "description": "Returns the order by id",
+        "responses": { "200": { "description": "Order!" }, "404": { "description": "Order not found" } }
+      }
+    },
+    "/api/orders": {
+      "post": {
+        "summary": "Create a new order",
+        "description": "Create a new order with cart items and customer information",
+        "tags": ["Orders"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["cartItems", "totalPrice", "customerInfo"],
+                "properties": {
+                  "cartItems": {
+                    "type": "array",
+                    "items": { "type": "object" },
+                    "minItems": 1,
+                    "description": "List of cart items"
+                  },
+                  "totalPrice": { "type": "number", "minimum": 0, "description": "Total price of the order" },
+                  "customerInfo": {
+                    "type": "object",
+                    "required": ["email", "firstName", "lastName", "address", "city", "state", "zipCode"],
+                    "properties": {
+                      "email": { "type": "string", "format": "email" },
+                      "firstName": { "type": "string" },
+                      "lastName": { "type": "string" },
+                      "address": { "type": "string" },
+                      "city": { "type": "string" },
+                      "state": { "type": "string" },
+                      "zipCode": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Order created successfully",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/Order" } } }
+              }
+            }
+          },
+          "400": { "description": "Invalid request data" }
+        }
+      },
+      "get": {
+        "summary": "Get all orders",
+        "description": "Retrieve a list of all orders",
+        "tags": ["Orders"],
+        "responses": {
+          "200": {
+            "description": "List of orders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Order" } } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/products/{id}": {
+      "get": {
+        "description": "Returns the product by id",
+        "responses": { "200": { "description": "Product!" }, "404": { "description": "Product not found" } }
+      }
+    },
+    "/api/products": {
+      "get": {
+        "summary": "Get all products",
+        "description": "Retrieve a list of products with optional filters",
+        "tags": ["Products"],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category",
+            "schema": { "type": "string", "enum": ["mobile", "laptop", "pc"] },
+            "description": "Filter by product category"
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": { "type": "string" },
+            "description": "Search products by name or description"
+          },
+          { "in": "query", "name": "minPrice", "schema": { "type": "number" }, "description": "Minimum price filter" },
+          { "in": "query", "name": "maxPrice", "schema": { "type": "number" }, "description": "Maximum price filter" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of products retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Product" } } }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid filters" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "category": { "type": "string", "enum": ["mobile", "laptop", "pc"] },
+          "price": { "type": "number" },
+          "imageUrl": { "type": "string" },
+          "stock": { "type": "integer" },
+          "isActive": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CartItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "productId": { "type": "string" },
+          "quantity": { "type": "integer", "minimum": 1 },
+          "product": { "$ref": "#/components/schemas/Product" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "products": { "type": "string", "description": "JSON string of ordered products" },
+          "totalPrice": { "type": "number" },
+          "status": { "type": "string", "enum": ["PENDING", "CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "tags": []
+}

@@ -1,0 +1,90 @@
+
+model Theme {
+  id              String   @id
+  /// Implements 1-to-1 from Agent
+  agentId         String   @unique
+  name            String
+  font            String
+  backgroundColor String   @map("background_color")
+  primaryColors   String[] @map("primary_colors")
+  accentColors    String[] @map("accent_colors")
+  agent           Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@map("Theme")
+}
+
+model Plan {
+  id            String         @id
+  name          String
+  description   String
+  price         Decimal        @db.Decimal(10, 2)
+  interval      String
+  features      String[]
+  subscriptions Subscription[]
+
+  @@map("Plan")
+}
+
+model Subscription {
+  id                 String   @id
+  /// Implements 0..1 from User
+  clientId           String   @unique
+  /// Implements *..1 from Plan
+  planId             String
+  status             String
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  client             User     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  plan               Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@map("Subscription")
+}
+
+model PaymentMethod {
+  id        String   @id
+  /// Implements 0..* from User
+  clientId  String
+  type      String
+  last4     String
+  expMonth  Int
+  expYear   Int
+  isDefault Boolean
+  createdAt DateTime @default(now())
+  client    User     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("PaymentMethod")
+}
+
+model Invoice {
+  id          String   @id
+  /// Implements 0..* from User
+  clientId    String
+  amount      Decimal  @db.Decimal(10, 2)
+  status      String
+  currency    String
+  createdDate DateTime
+  dueDate     DateTime
+  pdfUrl      String
+  client      User     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("Invoice")
+}
+
+model ShippingAddress {
+  id         String  @id
+  /// Implements 0..* from User
+  clientId   String
+  street     String
+  /// Nullable as requested
+  street2    String?
+  city       String
+  state      String
+  postalCode String
+  country    String
+  client     User    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("ShippingAddress")
+}

@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  mcp-server:
+    image: mcp-server:latest
+    environment:
+      - API_KEY=${API_KEY}
+      - OPENAPI_URL=${OPENAPI_URL}
+      - API_BASE_URL=${API_BASE_URL}
+    ports:
+      - "${SERVER_PORT}:8000"
+  mcp-client:
+    image: mcp-client:latest
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - MCP_SERVER_URL=${MCP_SERVER_URL}
+
+    depends_on:
+      - mcp-server
+    ports:
+      - "$CLIENT_PORT:3000"
