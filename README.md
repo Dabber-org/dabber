@@ -15,7 +15,7 @@ Run `task --list` to see all available tasks.
 
 | Command | Description |
 |---------|-------------|
-| `task client:install` | Install client dependencies using Bun |
+| `task client:install` | Install client dependencies using Bun | 
 | `task client:dev` | Run MCP client in development mode |
 
 ### Server
