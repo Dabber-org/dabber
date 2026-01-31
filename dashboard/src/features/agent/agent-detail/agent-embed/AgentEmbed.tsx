@@ -70,7 +70,7 @@ export default function AgentEmbed({
           <EmbeddingSolutionComponent
             title="Add Agent to your website"
             userScript={buildEmbedInfo(agent).iframeEmbed}
-            videoLink={encodeURI("/videos/1 Minute Sample Video.mp4")}
+            videoLink={encodeURI("/videos/setup_video.mp4")}
           />
         </Box>
       </Slide>

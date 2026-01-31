@@ -16,6 +16,7 @@ services:
       - DASHBOARD_URL=http://host.docker.internal:3000
       - IS_STATIC_ENABLED=${agent.isStaticEnabled}
       - IS_DYNAMIC_ENABLED=${agent.isDynamicEnabled}
+      - OPENAI_API_KEY=${env.OPENAI_API_KEY}
     ports:
       - "${agent.serverPort}:8000"
 
@@ -28,6 +29,7 @@ services:
       - APP_URL=http://localhost:${agent.clientPort}
       - USER_INSTRUCTIONS=${agent.instructions}
       - AGENT_NAME=${agent.name}
+      - OPENAI_API_KEY=${env.OPENAI_API_KEY}
     depends_on:
       - mcp-server
     ports:

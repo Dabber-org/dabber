@@ -1,1 +1,1 @@
-bunx lint-staged 
+cd dashboard && bunx lint-staged 

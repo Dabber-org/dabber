@@ -10,6 +10,7 @@ export const env = createEnv({
     GEMINI_API_KEY: z.string(),
     ANTHROPIC_API_KEY: z.string(),
     BETTER_AUTH_URL: z.url(),
+    OPENAI_API_KEY: z.string(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.url(),

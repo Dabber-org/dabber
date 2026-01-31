@@ -28,6 +28,36 @@ tasks:
     cmds:
       - .venv/bin/fastmcp run server.py:mcp --transport http --port 8000
 
+  # ─── DASHBOARD ─────────────────────────────────────────────
+  dashboard:setup:
+    desc: Install dashboard dependencies using Bun
+    dir: ./dashboard
+    cmds:
+      - bun i
+
+  dashboard:dev:
+    desc: Run dashboard in development mode
+    dir: ./dashboard
+    cmds:
+      - bun run dev
+
+  # ─── DOCKER BUILD ─────────────────────────────────────────
+  build:client:
+    desc: Build the mcp-client Docker image
+    cmds:
+      - docker build -t mcp-client ./client
+
+  build:server:
+    desc: Build the mcp-server Docker image
+    cmds:
+      - docker build -t mcp-server ./server
+
+  build:
+    desc: Build all Docker images
+    cmds:
+      - task: build:client
+      - task: build:server
+
   # ─── COMBINED TASKS ────────────────────────────────────────
   dev:
     desc: Run both MCP client and server concurrently
