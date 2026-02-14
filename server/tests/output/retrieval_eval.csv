@@ -1,0 +1,9 @@
+timestamp,query_id,query,strategy,n_results,latency_ms,context_chars,context_tokens_est,estimated_cost_usd,answer_in_context,answer_token_f1,error,error_detail,judge_answer,judge_accuracy,judge_faithfulness,judge_rationale,judge_model,judge_error
+2026-02-07T16:52:36.197943+00:00,1,Who is the dean of the College of Engineering?,snippet,5,11125.89,10028,1363,,False,0.0000,,,,,,,,
+2026-02-07T16:52:36.198943+00:00,1,Who is the dean of the College of Engineering?,compressed,5,11125.89,10028,1337,,False,0.0000,,,,,,,,
+2026-02-07T16:52:46.807013+00:00,2,Where's dr rehab's office?,snippet,5,10606.94,10028,1370,,False,0.0000,,,,,,,,
+2026-02-07T16:52:46.808013+00:00,2,Where's dr rehab's office?,compressed,5,10606.94,10028,1339,,False,0.0000,,,,,,,,
+2026-02-07T16:52:53.078078+00:00,3,coordinator of cs,snippet,5,6269.04,9596,1384,,True,0.0043,,,,,,,,
+2026-02-07T16:52:53.078078+00:00,3,coordinator of cs,compressed,5,6269.04,7938,1083,,True,0.0055,,,,,,,,
+2026-02-07T16:52:58.232069+00:00,4,"Professor in Computer Science. Information Retrieval, Big Data Analytics, and Data Science.",snippet,5,5151.88,10028,1348,,True,0.0044,,,,,,,,
+2026-02-07T16:52:58.232069+00:00,4,"Professor in Computer Science. Information Retrieval, Big Data Analytics, and Data Science.",compressed,5,5151.88,9610,1311,,True,0.0046,,,,,,,,

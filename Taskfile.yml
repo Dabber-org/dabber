@@ -26,7 +26,13 @@ tasks:
     desc: Run MCP server via FastMCP HTTP transport
     dir: ./server
     cmds:
-      - .venv/bin/fastmcp run server.py:mcp --transport http --port 8000
+      - .venv/bin/python app.py
+
+  server:qdrant:
+    desc: Run Qdrant locally (Docker Compose)
+    dir: ./server
+    cmds:
+      - docker compose -f docker-compose.qdrant.yml up -d
 
   # ─── DASHBOARD ─────────────────────────────────────────────
   dashboard:setup:

@@ -1,11 +1,10 @@
 [project]
 name = "server"
 version = "0.1.0"
-description = "Add your description here"
+description = "Dabber MCP server (scrape + index + hybrid search)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-  "chromadb[fastembed]>=1.1.1",
   "crawlee[beautifulsoup,playwright]>=1.0.2",
   "playwright>=1.55.0",
   "duckdb>=1.4.1",
@@ -15,4 +14,14 @@ dependencies = [
   "pydantic-settings>=2.11.0",
   "requests>=2.32.0",
   "openai>=1.0.0",
+  "llama-index>=0.14.13",
+  "llama-index-core>=0.14.13",
+  "qdrant-client[fastembed]>=1.14.2",
+  "llama-index-vector-stores-qdrant>=0.9.1",
+  "llama-index-embeddings-huggingface>=0.6.1",
+  "sentence-transformers>=5.2.2",
+  "llama-index-retrievers-bm25>=0.6.5",
 ]
+
+[project.scripts]
+dabber-server = "app:main"

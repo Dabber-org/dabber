@@ -21,4 +21,4 @@ COPY . .
 FROM core AS production
 EXPOSE 8000 
 ENV PYTHONPATH=.
-ENTRYPOINT ["python", "server.py"]
+ENTRYPOINT ["python", "app.py"]

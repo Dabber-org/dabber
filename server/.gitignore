@@ -9,6 +9,8 @@ venv/
 ENV/
 /chroma_db/
 /scrape/storage/
+# Qdrant local storage volume (runtime data)
+/qdrant_storage/
 # Crawlee operational data (temporary, not needed in git)
 storage/request_queues/
 storage/key_value_stores/

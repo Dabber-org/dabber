@@ -1,0 +1,5 @@
+id,query,expected_answer
+1,Who is the dean of the College of Engineering?,Prof. Amr Mohammad.
+2,Where's dr rehab's office?,H07 - A302
+3,coordinator of cs,Dr. Abdelkarim Erradi
+4,"Professor in Computer Science. Information Retrieval, Big Data Analytics, and Data Science.",Prof. Tamer Elsayed
