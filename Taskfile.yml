@@ -32,7 +32,7 @@ tasks:
     desc: Run Qdrant locally (Docker Compose)
     dir: ./server
     cmds:
-      - docker compose -f docker-compose.qdrant.yml up -d
+      - docker compose -f compose.dev.yml up -d
 
   # ─── DASHBOARD ─────────────────────────────────────────────
   dashboard:setup:

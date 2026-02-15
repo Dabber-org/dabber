@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { CustomizationProvider } from "../contexts/CustomizationContext";
+import { env } from "@/env";
 
 // Force dynamic rendering to read env vars at runtime
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const agentName = process.env.AGENT_NAME || "Dabber";
+  const agentName = env.AGENT_NAME || "Dabber";
 
   return (
     <html lang="en">

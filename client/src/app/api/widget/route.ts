@@ -1,6 +1,8 @@
+import { env } from "@/env";
+
 export async function GET() {
-  const bubbleUrl = `${process.env.APP_URL}/bubble`;
-  const chatUrl = `${process.env.APP_URL}`;
+  const bubbleUrl = `${env.APP_URL}/bubble`;
+  const chatUrl = `${env.APP_URL}`;
 
   const js = `
     (function () {
