@@ -24,7 +24,7 @@ Tool name: `vector_db`
   - `compressed_text`: only computed when the original page is longer than `max_chars` (sentence selection + context)
 
 ## Project Layout (Canonical)
-
+ 
 All "real" implementation lives at the `server/` root:
 - `app.py`: FastMCP server entrypoint and mode wiring
 - `settings.py`: env-based settings (loads `.env`)

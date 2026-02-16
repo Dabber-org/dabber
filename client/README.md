@@ -37,3 +37,4 @@ The client will be running at [http://localhost:3002](http://localhost:3002).
 ## 🔌 Connection
 
 The client is configured to expect the MCP server running at `http://localhost:8000`. Ensure the server is started before using the client features.
+ 
