@@ -14,10 +14,10 @@ export const env = createEnv({
     GEMINI_MODEL: z.string().optional(),
 
     // MCP server URL
-    SERVER_URL: z.url(),
+    SERVER_URL: z.url().optional(),
 
     // Optional customization
-    AGENT_NAME: z.string("Dabber"),
+    AGENT_NAME: z.string("Dabber").optional(),
     USER_INSTRUCTIONS: z.string().optional(),
     APP_URL: z.url().optional(),
   },
