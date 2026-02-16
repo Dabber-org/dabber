@@ -14,7 +14,7 @@ RUN bun install --frozen-lockfile
 #todo test on windows
 # Rebuild native modules (like lightningcss) with npm to ensure platform-specific binaries
 RUN npm rebuild lightningcss 
-    
+
 
 FROM base AS builder
 WORKDIR /app
@@ -31,6 +31,8 @@ RUN bun run build
 FROM gcr.io/distroless/nodejs20-debian12:nonroot AS production
 WORKDIR /app
 
+ENV HOST=0.0.0.0
+ENV PORT=3000
 ENV NEXT_TELEMETRY_DISABLED=1
 
 
@@ -39,7 +41,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
-EXPOSE 3000
+EXPOSE ${PORT}
 CMD ["server.js"]
 
 # FROM oven/bun:1.2 AS development
