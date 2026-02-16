@@ -6,7 +6,7 @@
 - [Bun](https://bun.sh/) - JavaScript runtime
 - [uv](https://github.com/astral-sh/uv) - Python package manager
 - [Docker](https://www.docker.com/) - Container runtime
-
+ 
 ## Tasks
 
 Run `task --list` to see all available tasks.
