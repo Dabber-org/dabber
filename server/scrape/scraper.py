@@ -1,332 +1,342 @@
 from __future__ import annotations
 
-"""Web scraping pipeline using Crawlee + Playwright.
+"""Simple Firecrawl-backed scraping pipeline.
 
-This scrapes a site starting from `settings.SCRAPING_URL` and writes page-level
-JSON records to `settings.SCRAPE_STORAGE_DIR` (Crawlee storage layout).
-
-Output (dataset files) is later indexed by LlamaIndex for page-level retrieval.
+This module starts a Firecrawl crawl job, polls for completed pages, and writes
+page-level JSON records to `settings.SCRAPE_DATASET_DIR`.
 """
 
 import asyncio
+import json
 import logging
-from contextlib import suppress
+import os
+import re
+import time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Set
-from urllib.parse import urljoin, urlparse
+from typing import Any
+from urllib.parse import parse_qs, urlparse
 
+import requests
 from bs4 import BeautifulSoup
-from crawlee import ConcurrencySettings, service_locator
-from crawlee.configuration import Configuration
-from crawlee.crawlers import (
-    PlaywrightCrawler,
-    PlaywrightCrawlingContext,
-    PlaywrightPreNavCrawlingContext,
-)
-from crawlee.errors import ServiceConflictError
-from crawlee.events import LocalEventManager
-from crawlee.storage_clients import FileSystemStorageClient
-from playwright.async_api import Error as PlaywrightError
-from playwright.async_api import Page
 
 from settings import settings
 
 logger = logging.getLogger(__name__)
 
 
+FIRECRAWL_BASE_URL_ENV = "FIRECRAWL_BASE_URL"
+FIRECRAWL_API_KEY_ENV = "FIRECRAWL_API_KEY"
+ENV_FILE_PATH = Path(__file__).resolve().parents[1] / ".env"
+
+
+def _strip_env_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
+
+
+def _read_env_file_value(key: str) -> str:
+    if not ENV_FILE_PATH.exists():
+        return ""
+
+    try:
+        lines = ENV_FILE_PATH.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+            if "=" not in line:
+                continue
+
+        k, v = line.split("=", 1)
+        if k.strip() == key:
+            return _strip_env_quotes(v.strip())
+
+    return ""
+
+
+def _resolve_env_value(key: str) -> str:
+    return os.getenv(key, "").strip() or _read_env_file_value(key).strip()
+
+
 class WebScraper:
-    """Production-grade web scraper with URL filtering and error handling."""
+    """Crawler that starts Firecrawl via POST using server URL from `.env`."""
 
-    DISALLOWED_EXTENSIONS = frozenset(
-        [
-            ".pdf",
-            ".zip",
-            ".doc",
-            ".docx",
-            ".xls",
-            ".xlsx",
-            ".ppt",
-            ".pptx",
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".gif",
-            ".mp4",
-            ".mp3",
-            ".avi",
-            ".mov",
-            ".exe",
-            ".dmg",
-        ]
-    )
-
-    SKIP_PATTERNS = frozenset(
-        [
-            "/_layouts/15/Authenticate.aspx",
-            "/auth/",
-            "/login",
-            "/logout",
-            "/signin",
-            "/signout",
-        ]
-    )
-
-    INVALID_HREF_PREFIXES = frozenset(["javascript:", "mailto:", "tel:", "sms:", "data:", "ftp:"])
-    INVALID_HREF_VALUES = frozenset(["#", "javascript:void(0)", "javascript:void(0);", "null", "undefined", ""])
+    TERMINAL_STATES = {"completed", "failed", "cancelled"}
 
     def __init__(
         self,
         start_url: str,
-        max_requests: int = 10_000,
-        max_concurrency: int = 50,
+        max_requests: int = 1000,
         min_content_length: int = 100,
+        firecrawl_base_url: str | None = None,
+        firecrawl_api_key: str | None = None,
+        poll_interval_seconds: float = 2.0,
+        timeout_seconds: float = 30.0,
+        max_wait_seconds: int = 1800,
+        stream_batch_size: int = 50,
     ) -> None:
         self.start_url = start_url
         self.max_requests = max_requests
-        self.max_concurrency = max_concurrency
         self.min_content_length = min_content_length
 
-        self._setup_url_constraints()
-        self._visited_urls: Set[str] = set()
+        resolved_base_url = (
+            firecrawl_base_url.strip()
+            if isinstance(firecrawl_base_url, str)
+            else _resolve_env_value(FIRECRAWL_BASE_URL_ENV)
+        )
+        if not resolved_base_url:
+            raise RuntimeError(
+                f"{FIRECRAWL_BASE_URL_ENV} is required in {ENV_FILE_PATH} or environment."
+            )
 
-        logger.info("Initialized scraper for %s", start_url)
-
-    def _setup_url_constraints(self) -> None:
-        parsed = urlparse(self.start_url)
-        self.allowed_scheme = (parsed.scheme or "").lower()
-        self.allowed_netloc = parsed.netloc.lower()
-
-        path = parsed.path.rstrip("/") or "/"
-        self.allowed_prefix = path if path.endswith("/") else f"{path}/"
-        self.allowed_prefix_lower = self.allowed_prefix.lower()
-
-    def _configure_storage(self) -> Configuration:
-        storage_dir = Path(settings.SCRAPE_STORAGE_DIR).resolve()
-        storage_dir.mkdir(parents=True, exist_ok=True)
-
-        config = Configuration(purge_on_start=True, storage_dir=str(storage_dir))
-
-        with suppress(ServiceConflictError):
-            service_locator.set_configuration(config)
-
-        if service_locator.get_configuration() != config:
-            config = Configuration.get_global_configuration()
-            config.purge_on_start = True
-            config.storage_dir = str(storage_dir)
-
-        with suppress(ServiceConflictError):
-            service_locator.set_storage_client(FileSystemStorageClient())
-
-        with suppress(ServiceConflictError):
-            service_locator.set_event_manager(LocalEventManager.from_config(config))
-
-        logger.info("Storage configured at: %s", storage_dir)
-        return config
-
-    def is_valid_url(self, url: str) -> bool:
-        if not url or len(url) > 2000:
-            return False
-
-        url_lower = url.lower()
-        if any(url_lower.endswith(ext) for ext in self.DISALLOWED_EXTENSIONS):
-            return False
-        if any(pattern in url for pattern in self.SKIP_PATTERNS):
-            return False
-
-        try:
-            parsed = urlparse(url)
-        except (ValueError, AttributeError):
-            return False
-
-        scheme = (parsed.scheme or "").lower()
-        netloc = parsed.netloc.lower()
-        if scheme != self.allowed_scheme or netloc != self.allowed_netloc:
-            return False
-
-        path = parsed.path or "/"
-        normalized_path = path if path.endswith("/") else f"{path}/"
-        return normalized_path.lower().startswith(self.allowed_prefix_lower)
-
-    async def _optimize_page_load(self, page: Page) -> None:
-        async def route_handler(route):
-            try:
-                if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
-                    await route.abort()
-                else:
-                    await route.continue_()
-            except PlaywrightError:
-                pass
-
-        try:
-            await page.route("**/*", route_handler)
-            await page.set_viewport_size({"width": 1280, "height": 720})
-        except PlaywrightError as e:
-            logger.warning("Failed to optimize page load: %s", e)
-
-    async def _extract_links(self, html: str, base_url: str) -> list[str]:
-        try:
-            soup = BeautifulSoup(html, "lxml")
-        except Exception as e:
-            logger.error("Failed to parse HTML: %s", e)
-            return []
-
-        links: list[str] = []
-        for anchor in soup.find_all("a", href=True):
-            try:
-                raw_href = anchor["href"].strip()
-                if not raw_href:
-                    continue
-
-                href_lower = raw_href.lower()
-                if href_lower in self.INVALID_HREF_VALUES:
-                    continue
-                if any(href_lower.startswith(prefix) for prefix in self.INVALID_HREF_PREFIXES):
-                    continue
-                if "undefined" in href_lower or "null" in href_lower:
-                    continue
-
-                absolute_url = urljoin(base_url, raw_href)
-                absolute_url = absolute_url.split("#")[0].rstrip("/")
-                canonical_url = absolute_url.lower()
-
-                if canonical_url not in self._visited_urls and self.is_valid_url(absolute_url):
-                    links.append(absolute_url)
-                    self._visited_urls.add(canonical_url)
-            except (ValueError, AttributeError, TypeError):
-                continue
-
-        return links
-
-    async def _extract_content(self, html: str, url: str) -> Optional[dict]:
-        try:
-            soup = BeautifulSoup(html, "lxml")
-        except Exception as e:
-            logger.error("Failed to parse HTML from %s: %s", url, e)
-            return None
-
-        title = ""
-        if soup.title and soup.title.string:
-            title = soup.title.string.strip()
-        elif soup.find("h1"):
-            h1 = soup.find("h1")
-            title = h1.get_text(strip=True) if h1 else ""
-
-        for element in soup(["script", "style", "nav", "footer", "header", "aside", "iframe"]):
-            element.decompose()
-
-        text = soup.get_text(separator=" ", strip=True)
-        text = " ".join(text.split())
-
-        if len(text) < self.min_content_length:
-            return None
-
-        word_count = len(text.split())
-        return {
-            "url": url,
-            "title": title,
-            "text": text,
-            "word_count": word_count,
-            "char_count": len(text),
-        }
-
-    async def run(self) -> None:
-        config = self._configure_storage()
-
-        crawler = PlaywrightCrawler(
-            configuration=config,
-            max_requests_per_crawl=self.max_requests,
-            max_request_retries=2,
-            max_crawl_depth=10,
-            concurrency_settings=ConcurrencySettings(
-                max_concurrency=self.max_concurrency,
-                min_concurrency=1,
-                desired_concurrency=min(10, self.max_concurrency),
-            ),
-            headless=True,
-            browser_type="chromium",
-            browser_launch_options={
-                "chromium_sandbox": False,
-                "args": [
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-dev-shm-usage",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    "--disable-background-networking",
-                    "--disable-background-timer-throttling",
-                    "--disable-backgrounding-occluded-windows",
-                    "--disable-breakpad",
-                    "--disable-component-extensions-with-background-pages",
-                    "--disable-features=TranslateUI",
-                    "--disable-ipc-flooding-protection",
-                    "--disable-renderer-backgrounding",
-                ],
-            },
+        self.firecrawl_base_url = resolved_base_url.rstrip("/")
+        self.firecrawl_api_key = (
+            firecrawl_api_key.strip()
+            if isinstance(firecrawl_api_key, str)
+            else _resolve_env_value(FIRECRAWL_API_KEY_ENV)
         )
 
-        @crawler.pre_navigation_hook
-        async def before_navigation(context: PlaywrightPreNavCrawlingContext) -> None:
-            context.log.info("-> %s", context.request.url)
+        self.poll_interval_seconds = max(0.25, poll_interval_seconds)
+        self.timeout_seconds = timeout_seconds
+        self.max_wait_seconds = max_wait_seconds
+        self.stream_batch_size = max(1, stream_batch_size)
 
-        @crawler.router.default_handler
-        async def handle_page(context: PlaywrightCrawlingContext) -> None:
-            url = context.request.url
-            if not self.is_valid_url(url):
-                context.log.debug("Skipped (filtered): %s", url)
-                return
+    async def run(self) -> None:
+        await asyncio.to_thread(self._run_sync)
 
-            try:
-                await self._optimize_page_load(context.page)
+    def _run_sync(self) -> None:
+        logger.info("Starting Firecrawl crawl for %s", self.start_url)
+        job_id = self._start_crawl()
+        docs = self._collect_documents(job_id)
+        page_records = self._transform_documents(docs)
+        self._write_dataset(page_records)
+        logger.info("Firecrawl crawl complete. Stored %s page records.", len(page_records))
 
-                try:
-                    await context.page.wait_for_load_state("domcontentloaded", timeout=15000)
-                except PlaywrightError:
-                    context.log.warning("Timeout on %s, continuing...", url)
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.firecrawl_api_key:
+            headers["Authorization"] = f"Bearer {self.firecrawl_api_key}"
+        return headers
 
-                try:
-                    html = await context.page.content()
-                except PlaywrightError as e:
-                    context.log.error("Failed to get page content for %s: %s", url, e)
-                    return
+    def _request_json(self, response: requests.Response) -> dict[str, Any]:
+        try:
+            return response.json()
+        except Exception:
+            return {"success": False, "error": response.text}
 
-                content = await self._extract_content(html, url)
-                if content:
-                    await context.push_data(content)
-                    context.log.info(
-                        "Scraped: %s (%s words, %s chars)",
-                        url,
-                        content["word_count"],
-                        content["char_count"],
-                    )
+    def _start_crawl(self) -> str:
+        endpoint = f"{self.firecrawl_base_url}/v2/crawl"
+        payload = {
+            "url": self.start_url,
+            "limit": self.max_requests,
+            "scrapeOptions": {"formats": ["markdown", "html"]},
+        }
+        response = requests.post(
+            endpoint,
+            headers=self._headers(),
+            json=payload,
+            timeout=self.timeout_seconds,
+        )
+        data = self._request_json(response)
+        if response.status_code >= 400:
+            raise RuntimeError(f"Failed to start crawl [{response.status_code}]: {data}")
+
+        job_id = data.get("id")
+        if not isinstance(job_id, str) or not job_id:
+            raise RuntimeError(f"Crawl did not return a valid job id: {data}")
+
+        logger.info("Started Firecrawl job %s", job_id)
+        return job_id
+
+    def _next_skip_from_next(self, next_url: Any) -> int | None:
+        if not isinstance(next_url, str) or not next_url:
+            return None
+        try:
+            query = parse_qs(urlparse(next_url).query)
+            values = query.get("skip")
+            if not values:
+                return None
+            return max(0, int(values[0]))
+        except Exception:
+            return None
+
+    def _status(self, job_id: str, skip: int, limit: int) -> dict[str, Any]:
+        endpoint = f"{self.firecrawl_base_url}/v2/crawl/{job_id}"
+        response = requests.get(
+            endpoint,
+            headers=self._headers(),
+            params={"skip": skip, "limit": limit},
+            timeout=self.timeout_seconds,
+        )
+        data = self._request_json(response)
+        if response.status_code >= 400:
+            raise RuntimeError(f"Failed to get crawl status [{response.status_code}]: {data}")
+        return data
+
+    def _collect_documents(self, job_id: str) -> list[dict[str, Any]]:
+        deadline = time.monotonic() + self.max_wait_seconds
+        cursor = 0
+        docs: list[dict[str, Any]] = []
+        final_total: int | None = None
+
+        while True:
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"Crawl timed out after {self.max_wait_seconds}s: {job_id}")
+
+            data = self._status(job_id, skip=cursor, limit=self.stream_batch_size)
+            status = str(data.get("status", "unknown")).lower()
+            completed = data.get("completed")
+            total = data.get("total")
+            if isinstance(total, int):
+                final_total = total
+
+            page_batch = data.get("data")
+            if isinstance(page_batch, list):
+                docs.extend(x for x in page_batch if isinstance(x, dict))
+
+            logger.info("Crawl status=%s completed=%s/%s", status, completed, total)
+
+            next_skip = self._next_skip_from_next(data.get("next"))
+            if next_skip is not None:
+                cursor = max(cursor, next_skip)
+            elif isinstance(page_batch, list):
+                cursor += len(page_batch)
+
+            if status in self.TERMINAL_STATES:
+                break
+
+            time.sleep(self.poll_interval_seconds)
+
+        if isinstance(final_total, int):
+            while cursor < final_total:
+                data = self._status(job_id, skip=cursor, limit=self.stream_batch_size)
+                page_batch = data.get("data")
+                if not isinstance(page_batch, list) or not page_batch:
+                    break
+                docs.extend(x for x in page_batch if isinstance(x, dict))
+                next_skip = self._next_skip_from_next(data.get("next"))
+                if next_skip is not None:
+                    cursor = max(cursor, next_skip)
                 else:
-                    context.log.debug("Skipped (insufficient content): %s", url)
-                    return
+                    cursor += len(page_batch)
 
-                links = await self._extract_links(html, url)
-                if links:
-                    await context.add_requests(links)
-                    context.log.debug("Found %s new links", len(links))
+        return docs
 
-            except PlaywrightError as e:
-                context.log.error("Playwright error on %s: %s", url, e)
-            except Exception as e:
-                context.log.error("Unexpected error on %s: %s", url, e, exc_info=True)
+    def _compact(self, text: str) -> str:
+        return re.sub(r"\s+", " ", text).strip()
 
-        logger.info("Starting crawl from: %s", self.start_url)
-        logger.info("Max requests: %s", self.max_requests)
-        logger.info("Max concurrency: %s", self.max_concurrency)
-        logger.info("Allowed prefix: %s", self.allowed_prefix)
+    def _extract_text(self, doc: dict[str, Any]) -> str:
+        markdown = doc.get("markdown")
+        if isinstance(markdown, str) and markdown.strip():
+            return self._compact(markdown)
 
-        await crawler.run([self.start_url])
+        summary = doc.get("summary")
+        if isinstance(summary, str) and summary.strip():
+            return self._compact(summary)
 
-        logger.info("Crawl complete. Total unique URLs visited: %s", len(self._visited_urls))
+        html = doc.get("html")
+        if isinstance(html, str) and html.strip():
+            soup = BeautifulSoup(html, "lxml")
+            return self._compact(soup.get_text(separator=" ", strip=True))
+
+        raw_html = doc.get("rawHtml")
+        if isinstance(raw_html, str) and raw_html.strip():
+            soup = BeautifulSoup(raw_html, "lxml")
+            return self._compact(soup.get_text(separator=" ", strip=True))
+
+        extracted = doc.get("extract")
+        if extracted is not None:
+            return self._compact(json.dumps(extracted, ensure_ascii=False))
+
+        return ""
+
+    def _extract_url_title(self, doc: dict[str, Any]) -> tuple[str, str]:
+        metadata = doc.get("metadata")
+        url = ""
+        title = ""
+
+        if isinstance(metadata, dict):
+            source_url = metadata.get("sourceURL")
+            if isinstance(source_url, str):
+                url = source_url
+            elif isinstance(metadata.get("url"), str):
+                url = metadata["url"]
+
+            if isinstance(metadata.get("title"), str):
+                title = metadata["title"]
+
+        if not url and isinstance(doc.get("url"), str):
+            url = doc["url"]
+        if not title and isinstance(doc.get("title"), str):
+            title = doc["title"]
+
+        return url, title
+
+    def _transform_documents(self, docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+
+        for doc in docs:
+            text = self._extract_text(doc)
+            if len(text) < self.min_content_length:
+                continue
+
+            url, title = self._extract_url_title(doc)
+            key = (url.strip().lower(), text[:256])
+            if key in seen:
+                continue
+            seen.add(key)
+
+            records.append(
+                {
+                    "url": url,
+                    "title": title,
+                    "text": text,
+                    "word_count": len(text.split()),
+                    "char_count": len(text),
+                }
+            )
+
+        return records
+
+    def _write_dataset(self, records: list[dict[str, Any]]) -> None:
+        dataset_dir = Path(settings.SCRAPE_DATASET_DIR).resolve()
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+
+        for existing in dataset_dir.glob("*.json"):
+            existing.unlink(missing_ok=True)
+
+        for idx, record in enumerate(records):
+            output_path = dataset_dir / f"{idx:09d}.json"
+            output_path.write_text(
+                json.dumps(record, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+        metadata = {
+            "source": "firecrawl",
+            "count": len(records),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        (dataset_dir / "__metadata__.json").write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
 
 async def scrape_website() -> None:
-    """Scrape the configured site into Crawlee's local dataset storage."""
+    """Scrape the configured site by delegating crawl work to Firecrawl."""
     scraper = WebScraper(
         start_url=settings.SCRAPING_URL,
         max_requests=1000,
-        max_concurrency=50,
         min_content_length=100,
     )
     await scraper.run()
@@ -335,4 +345,3 @@ async def scrape_website() -> None:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     asyncio.run(scrape_website())
-

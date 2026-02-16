@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import time
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
@@ -15,6 +16,9 @@ from typing import Dict, List
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 if str(SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_ROOT))
+
+if os.name == "nt":
+    warnings.filterwarnings("ignore", message="resource module not available on Windows")
 
 from fastmcp import Client
 from openai import OpenAI
@@ -438,8 +442,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate retrieval strategies.")
     parser.add_argument(
         "--queries",
-        required=True,
-        help="Path to CSV with queries (relative to tests/ if not absolute).",
+        default="",
+        help="Path to CSV with queries (relative to tests/ if not absolute). Defaults to queries.template.csv.",
     )
     parser.add_argument(
         "--output",
@@ -493,9 +497,17 @@ def main() -> int:
         print("OPENAI_API_KEY is required when --llm-judge=on", file=sys.stderr)
         return 1
 
+    if not args.queries:
+        args.queries = "queries.template.csv"
+
     queries_path = Path(args.queries)
     if not queries_path.is_absolute():
         queries_path = Path(__file__).resolve().parent / queries_path
+    if not queries_path.exists():
+        parser.error(
+            f"queries CSV not found: {queries_path}. "
+            "Pass --queries or create tests/queries.template.csv."
+        )
     args.queries = str(queries_path)
 
     output_path = Path(args.output)

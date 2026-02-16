@@ -7,11 +7,22 @@ decides at runtime which features are enabled based on these values.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+SERVER_ROOT = Path(__file__).resolve().parent
+
+
+def _resolve_server_path(value: str) -> str:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = SERVER_ROOT / path
+    return str(path.resolve())
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(SERVER_ROOT / ".env"), extra="ignore")
 
     # Dashboard integration (optional; failures should not crash the server).
     AGENT_ID: str = ""
@@ -44,3 +55,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+settings.SCRAPE_STORAGE_DIR = _resolve_server_path(settings.SCRAPE_STORAGE_DIR)
+settings.SCRAPE_DATASET_DIR = _resolve_server_path(settings.SCRAPE_DATASET_DIR)
