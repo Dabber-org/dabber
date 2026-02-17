@@ -1,4 +1,4 @@
-name: Build and Push Docker Images
+name: Build and Deploy Dashboard
 
 on:
     push:
@@ -11,7 +11,7 @@ env:
     REGISTRY: ghcr.io
 
 jobs:
-    build-and-push:
+    build-and-deploy:
         name: Build and Push ${{ matrix.image }}
         runs-on: ubuntu-latest
         permissions:
