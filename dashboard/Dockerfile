@@ -12,7 +12,8 @@ FROM base AS build
 WORKDIR /app
 
 
-COPY deployment/.env.production .env
+ARG PUBLIC_BUILD_ENV_FILE=deployment/.env.production
+COPY ${PUBLIC_BUILD_ENV_FILE} .env.production
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
