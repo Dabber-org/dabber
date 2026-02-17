@@ -1,0 +1,30 @@
+services:
+  dashboard:
+    image: ghcr.io/mohanedwalid05/dashboard:latest
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3000
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - DATABASE_URL=${DATABASE_URL}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+      - ENV=production
+      - DOKPLOY_API_KEY=${DOKPLOY_API_KEY}
+      - DOKPLOY_PROJECT_ID=${DOKPLOY_PROJECT_ID}
+      - DOKPLOY_ENVIRONMENT_ID=${DOKPLOY_ENVIRONMENT_ID}
+    networks:
+      - dokploy-network
+    deploy:
+      labels:
+        - "traefik.enable=true"
+
+networks:
+  dokploy-network:
+    external: true
