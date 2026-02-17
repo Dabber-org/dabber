@@ -84,11 +84,12 @@ model Agent {
   scrapingUrl String?     @map("scrapingURL")
   apiBaseUrl  String?     @map("apiBaseURL")
   createdAt   DateTime    @default(now())
-  clientPort  Int
-  serverPort  Int
+  clientPort  Int?
+  serverPort  Int?
   isStaticEnabled Boolean   @default(false)
   isDynamicEnabled Boolean   @default(false)
-
+  composeId   String?
+  domain      String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

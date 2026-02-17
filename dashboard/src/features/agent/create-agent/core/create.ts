@@ -1,9 +1,9 @@
 import { prisma } from "@/core/db/prisma";
 import { AgentStatus } from "@/generated/prisma";
 import { allocatePorts } from "@/core/docker/allocatePorts";
-import { deployAgent } from "./deploy";
 import { buildEmbedInfo } from "./embed";
 import { CreateAgentResponse } from "../types";
+import { getDeploymentStrategy, isProduction } from "@/core/agents-deployment";
 
 type CreateAgentProps = {
   userId: string;
@@ -26,7 +26,7 @@ export const createAgent = async ({
   isDynamicEnabled,
   instructions,
 }: CreateAgentProps): Promise<CreateAgentResponse> => {
-  const { serverPort, clientPort } = await allocatePorts();
+  const ports = isProduction() ? null : await allocatePorts();
 
   const agent = await prisma.agent.create({
     data: {
@@ -36,20 +36,32 @@ export const createAgent = async ({
       scrapingUrl,
       openApiUrl,
       apiBaseUrl,
-      clientPort,
-      serverPort,
+      clientPort: ports?.clientPort ?? null,
+      serverPort: ports?.serverPort ?? null,
       isStaticEnabled: isStaticEnabled ?? false,
       isDynamicEnabled: isDynamicEnabled ?? false,
       instructions,
     },
   });
 
-  await deployAgent(agent);
+  const strategy = getDeploymentStrategy();
+  const deployResult = await strategy.deploy(agent);
 
-  const { clientUrl, iframeEmbed } = buildEmbedInfo(agent);
+  let updatedAgent = agent;
+  if (deployResult.composeId || deployResult.domain) {
+    updatedAgent = await prisma.agent.update({
+      where: { id: agent.id },
+      data: {
+        composeId: deployResult.composeId,
+        domain: deployResult.domain,
+      },
+    });
+  }
+
+  const { clientUrl, iframeEmbed } = buildEmbedInfo(updatedAgent);
 
   return {
-    agent,
+    agent: updatedAgent,
     clientUrl,
     iframeEmbed,
   };

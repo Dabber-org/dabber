@@ -5,6 +5,10 @@ const START_CLIENT_PORT = 45000;
 
 export async function allocatePorts() {
   const last = await prisma.agent.findFirst({
+    where: {
+      serverPort: { not: null },
+      clientPort: { not: null },
+    },
     orderBy: { createdAt: "desc" },
     select: { serverPort: true, clientPort: true },
   });

@@ -11,6 +11,10 @@ export const env = createEnv({
     ANTHROPIC_API_KEY: z.string(),
     BETTER_AUTH_URL: z.url(),
     OPENAI_API_KEY: z.string(),
+    ENV: z.enum(["development", "production"]).default("development"),
+    DOKPLOY_API_KEY: z.string().optional(),
+    DOKPLOY_PROJECT_ID: z.string().optional(),
+    DOKPLOY_ENVIRONMENT_ID: z.string().optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.url(),

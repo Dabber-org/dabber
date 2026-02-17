@@ -1,7 +1,11 @@
 import type { Agent } from "@/generated/prisma";
 import { env } from "@/env";
 
-export function generateCompose(agent: Agent) {
+export function generateLocalCompose(agent: Agent) {
+  if (!agent.serverPort || !agent.clientPort) {
+    throw new Error("Cannot generate local compose: agent has no ports allocated");
+  }
+
   return `
 version: "3.9"
 
