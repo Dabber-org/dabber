@@ -4,7 +4,6 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=production
-      - HOST=0.0.0.0
       - PORT=3000
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
       - DATABASE_URL=${DATABASE_URL}

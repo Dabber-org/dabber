@@ -25,7 +25,7 @@ RUN bun run build
 FROM gcr.io/distroless/nodejs20-debian12:nonroot AS production
 WORKDIR /app
 
-ENV HOST=0.0.0.0
+ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 ENV NEXT_TELEMETRY_DISABLED=1
 
