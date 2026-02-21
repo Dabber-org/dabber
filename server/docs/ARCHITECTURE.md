@@ -16,14 +16,33 @@ At runtime the server:
 
 Pipeline: `pipeline/static_pipeline.py`
 
-Steps:
-1. `storage/qdrant.py`: `ensure_collection(recreate=True)`
-2. `scrape/scraper.py`: `scrape_website()` writes JSON pages to Crawlee local storage
-3. `SimpleDirectoryReader` loads page-level Documents:
+Startup strategy is selected from:
+- `RESCRAPE` setting
+- whether the Qdrant collection exists
+- whether local scraped JSON pages exist
+
+Decision tree:
+1. `RESCRAPE=true`:
+   - force rebuild (`ensure_collection(recreate=True)`), then scrape + embed.
+2. `RESCRAPE=false` and collection missing:
+   - first-run ingest (`ensure_collection(recreate=False)`), then scrape + embed.
+3. `RESCRAPE=false` and collection exists + local scraped files exist:
+   - reuse existing vectors (skip scrape/embed), rebuild BM25 from local pages, activate search.
+4. `RESCRAPE=false` and collection exists + local scraped files missing:
+   - recovery rebuild (`ensure_collection(recreate=True)`), then scrape + embed.
+
+Full ingest path:
+1. `scrape/scraper.py`: `scrape_website()` writes JSON pages to Crawlee local storage
+2. `SimpleDirectoryReader` loads page-level Documents:
    - `.pdf` via `PDFReader(return_full_document=False)`
    - `.json` via `ScrapeJSONPageReader` (embeds only `text`, keeps `url/title/...` metadata)
-4. `embeddings.py`: `get_embed_model()` (BGE) and store vectors into Qdrant
-5. `retrieval/hybrid_search.py`: `init_search(index)` to enable hybrid retrieval
+3. `embeddings.py`: `get_embed_model()` (BGE) and store vectors into Qdrant
+4. `retrieval/hybrid_search.py`: `init_search(index)` to enable hybrid retrieval
+
+Reuse-existing path:
+1. Build `VectorStoreIndex` from existing Qdrant vectors.
+2. Build BM25 retriever from local scraped page documents.
+3. Call `init_search(index, bm25_retriever=...)` to activate hybrid retrieval.
 
 ## Retrieval (Hybrid + Dual Output)
 

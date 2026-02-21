@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import csv
 import json
+import logging
 import os
 import re
 import sys
@@ -22,16 +23,8 @@ if os.name == "nt":
 
 from fastmcp import Client
 from openai import OpenAI
-from qdrant_client import AsyncQdrantClient
-from llama_index.core import Settings, SimpleDirectoryReader, StorageContext, VectorStoreIndex
-from llama_index.readers.file import PDFReader
-from llama_index.vector_stores.qdrant import QdrantVectorStore
 
-from embeddings import get_embed_model
-from scrape.json_page_reader import ScrapeJSONPageReader
-from retrieval.hybrid_search import init_search, vector_db
-from settings import settings
-from storage import qdrant
+logger = logging.getLogger(__name__)
 
 
 def _normalize(text: str) -> str:
@@ -164,153 +157,16 @@ def _load_queries(path: Path) -> List[Dict[str, str]]:
         return rows
 
 
-def _build_index(*, recreate: bool) -> None:
-    qdrant.ensure_collection(recreate=recreate)
-
-    reader = SimpleDirectoryReader(
-        input_dir=settings.SCRAPE_DATASET_DIR,
-        recursive=True,
-        exclude=["__metadata__.json"],
-        file_extractor={
-            ".pdf": PDFReader(return_full_document=False),
-            ".json": ScrapeJSONPageReader(),
-        },
+def _setup_logging(level: str) -> None:
+    logging.basicConfig(
+        level=getattr(logging, level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    documents = reader.load_data()
-
-    client = qdrant.get_client()
-    aclient = AsyncQdrantClient(url=qdrant.QDRANT_URL)
-    vector_store = QdrantVectorStore(
-        client=client,
-        aclient=aclient,
-        collection_name=qdrant.COLLECTION_NAME,
-    )
-    storage_context = StorageContext.from_defaults(vector_store=vector_store)
-
-    Settings.embed_model = get_embed_model()
-
-    index = VectorStoreIndex.from_documents(
-        documents=documents,
-        storage_context=storage_context,
-        use_async=True,
-        transformations=[],
-        show_progress=True,
-        store_nodes_override=True,
-    )
-
-    init_search(index)
-
-
-async def _run_eval(args: argparse.Namespace) -> List[Dict[str, object]]:
-    queries = _load_queries(Path(args.queries))
-
-    rows: List[Dict[str, object]] = []
-    strategies = ["snippet", "compressed"] if args.strategy == "both" else [args.strategy]
-
-    do_llm_judge = False
-    if args.llm_judge == "on":
-        do_llm_judge = True
-    elif args.llm_judge == "auto":
-        do_llm_judge = bool(os.getenv("OPENAI_API_KEY"))
-
-    judge_client = OpenAI() if do_llm_judge else None
-
-    for query in queries:
-        if not query["query"]:
-            continue
-
-        start = time.perf_counter()
-        response = await vector_db(
-            query=query["query"],
-            n_results=args.n_results,
-            max_chars=args.max_chars,
-            semantic_top_k=args.semantic_top_k,
-            lexical_top_k=args.lexical_top_k,
-        )
-        latency_ms = (time.perf_counter() - start) * 1000.0
-
-        error = response.get("error") if isinstance(response, dict) else None
-        error_detail = ""
-        if isinstance(response, dict):
-            error_detail = str(response.get("detail") or "")
-        results = response.get("results", []) if isinstance(response, dict) else []
-
-        for strategy in strategies:
-            use_compressed = strategy == "compressed"
-            context_text = _build_context(results, use_compressed=use_compressed)
-            context_chars = len(context_text)
-            context_tokens_est = _estimate_tokens(context_text)
-
-            expected_answer = query["expected_answer"]
-            answer_in_context = ""
-            answer_token_f1 = ""
-            if expected_answer:
-                normalized_expected = _normalize(expected_answer)
-                normalized_context = _normalize(context_text)
-                answer_in_context = str(normalized_expected in normalized_context)
-                answer_token_f1 = f"{_token_f1(expected_answer, context_text):.4f}"
-
-            estimated_cost = ""
-            if args.price_per_1k is not None:
-                estimated_cost = f"{(context_tokens_est / 1000.0) * args.price_per_1k:.6f}"
-
-            judge_fields = {
-                "judge_answer": "",
-                "judge_accuracy": "",
-                "judge_faithfulness": "",
-                "judge_rationale": "",
-                "judge_model": "",
-                "judge_error": "",
-            }
-            if (
-                do_llm_judge
-                and judge_client is not None
-                and not error
-                and expected_answer
-                and context_text
-            ):
-                try:
-                    judge_fields = _judge_with_llm(
-                        judge_client,
-                        model=args.llm_judge_model,
-                        query=query["query"],
-                        expected_answer=expected_answer,
-                        context=context_text,
-                    )
-                except Exception as exc:
-                    judge_fields = {
-                        "judge_answer": "",
-                        "judge_accuracy": "",
-                        "judge_faithfulness": "",
-                        "judge_rationale": "",
-                        "judge_model": args.llm_judge_model,
-                        "judge_error": str(exc),
-                    }
-
-            rows.append(
-                {
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "query_id": query["id"],
-                    "query": query["query"],
-                    "strategy": strategy,
-                    "n_results": len(results),
-                    "latency_ms": f"{latency_ms:.2f}",
-                    "context_chars": context_chars,
-                    "context_tokens_est": context_tokens_est,
-                    "estimated_cost_usd": estimated_cost,
-                    "answer_in_context": answer_in_context,
-                    "answer_token_f1": answer_token_f1,
-                    "error": error or "",
-                    "error_detail": error_detail,
-                    **judge_fields,
-                }
-            )
-
-    return rows
 
 
 async def _run_eval_via_mcp(args: argparse.Namespace) -> List[Dict[str, object]]:
     queries = _load_queries(Path(args.queries))
+    logger.info("Loaded %d queries from %s", len(queries), args.queries)
 
     rows: List[Dict[str, object]] = []
     strategies = ["snippet", "compressed"] if args.strategy == "both" else [args.strategy]
@@ -324,11 +180,19 @@ async def _run_eval_via_mcp(args: argparse.Namespace) -> List[Dict[str, object]]
     judge_client = OpenAI() if do_llm_judge else None
 
     client = Client(args.mcp_url)
+    logger.info("Connecting to MCP server at %s", args.mcp_url)
     async with client:
-        for query in queries:
+        for idx, query in enumerate(queries, start=1):
             if not query["query"]:
+                logger.debug("Skipping empty query row id=%s", query.get("id"))
                 continue
 
+            logger.info(
+                "Running query %d/%d (id=%s)",
+                idx,
+                len(queries),
+                query["id"],
+            )
             start = time.perf_counter()
             result = await client.call_tool_mcp(
                 "vector_db",
@@ -341,6 +205,12 @@ async def _run_eval_via_mcp(args: argparse.Namespace) -> List[Dict[str, object]]
                     "compress_percentile": args.compress_percentile,
                     "context_before": args.context_before,
                     "context_after": args.context_after,
+                    "filter_host": args.filter_host,
+                    "filter_path_prefix": args.filter_path_prefix,
+                    "filter_language": args.filter_language,
+                    "filter_content_type": args.filter_content_type,
+                    "filter_status_code": args.filter_status_code,
+                    "metadata_rank_boost": args.metadata_rank_boost,
                 },
             )
             latency_ms = (time.perf_counter() - start) * 1000.0
@@ -350,6 +220,11 @@ async def _run_eval_via_mcp(args: argparse.Namespace) -> List[Dict[str, object]]
                 if result.content:
                     error_text = getattr(result.content[0], "text", "") or ""
                 response = {"error": "tool_error", "detail": error_text}
+                logger.warning(
+                    "MCP tool call failed for query id=%s: %s",
+                    query["id"],
+                    error_text or "unknown tool error",
+                )
             else:
                 structured = getattr(result, "structuredContent", None) or getattr(
                     result, "structured_content", None
@@ -363,6 +238,13 @@ async def _run_eval_via_mcp(args: argparse.Namespace) -> List[Dict[str, object]]
             if isinstance(response, dict):
                 error_detail = str(response.get("detail") or "")
             results = response.get("results", []) if isinstance(response, dict) else []
+            logger.info(
+                "Query id=%s completed in %.2f ms with %d results%s",
+                query["id"],
+                latency_ms,
+                len(results),
+                f" (error={error})" if error else "",
+            )
 
             for strategy in strategies:
                 use_compressed = strategy == "compressed"
@@ -407,6 +289,12 @@ async def _run_eval_via_mcp(args: argparse.Namespace) -> List[Dict[str, object]]
                             context=context_text,
                         )
                     except Exception as exc:
+                        logger.warning(
+                            "LLM judge failed for query id=%s strategy=%s: %s",
+                            query["id"],
+                            strategy,
+                            exc,
+                        )
                         judge_fields = {
                             "judge_answer": "",
                             "judge_accuracy": "",
@@ -435,6 +323,7 @@ async def _run_eval_via_mcp(args: argparse.Namespace) -> List[Dict[str, object]]
                     }
                 )
 
+    logger.info("Generated %d eval rows", len(rows))
     return rows
 
 
@@ -458,8 +347,11 @@ def main() -> int:
     )
     parser.add_argument(
         "--mcp-url",
-        default="",
-        help="Optional MCP server URL (e.g., http://localhost:8000/mcp). If set, queries are sent to the running server.",
+        default=os.getenv("MCP_URL", "http://localhost:8000/mcp"),
+        help=(
+            "MCP server URL (e.g., http://localhost:8000/mcp). "
+            "Defaults to MCP_URL env var or http://localhost:8000/mcp."
+        ),
     )
     parser.add_argument("--n-results", type=int, default=5)
     parser.add_argument("--max-chars", type=int, default=2000)
@@ -468,6 +360,12 @@ def main() -> int:
     parser.add_argument("--compress-percentile", type=float, default=0.2)
     parser.add_argument("--context-before", type=int, default=1)
     parser.add_argument("--context-after", type=int, default=1)
+    parser.add_argument("--filter-host", default=None)
+    parser.add_argument("--filter-path-prefix", default=None)
+    parser.add_argument("--filter-language", default=None)
+    parser.add_argument("--filter-content-type", default=None)
+    parser.add_argument("--filter-status-code", type=int, default=None)
+    parser.add_argument("--metadata-rank-boost", type=float, default=0.2)
     parser.add_argument(
         "--llm-judge",
         choices=["auto", "on", "off"],
@@ -480,18 +378,21 @@ def main() -> int:
         help="OpenAI model to use for LLM judging (default: cheapest model).",
     )
     parser.add_argument(
-        "--recreate-collection",
-        action="store_true",
-        help="Recreate Qdrant collection before indexing.",
-    )
-    parser.add_argument(
         "--price-per-1k",
         type=float,
         default=None,
         help="Optional USD cost per 1k tokens for estimated cost.",
     )
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default=os.getenv("EVAL_LOG_LEVEL", "INFO").upper(),
+        help="Logging level for eval execution.",
+    )
 
     args = parser.parse_args()
+    _setup_logging(args.log_level)
+    logger.info("Starting retrieval eval")
 
     if args.llm_judge == "on" and not os.getenv("OPENAI_API_KEY"):
         print("OPENAI_API_KEY is required when --llm-judge=on", file=sys.stderr)
@@ -514,16 +415,9 @@ def main() -> int:
     if not output_path.is_absolute():
         output_path = Path(__file__).resolve().parent / output_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    logger.info("Writing report to %s", output_path)
 
-    if args.mcp_url:
-        rows = asyncio.run(_run_eval_via_mcp(args))
-    else:
-        try:
-            _build_index(recreate=args.recreate_collection)
-        except Exception as exc:
-            print(f"Failed to build index: {exc}", file=sys.stderr)
-            return 1
-        rows = asyncio.run(_run_eval(args))
+    rows = asyncio.run(_run_eval_via_mcp(args))
     if not rows:
         print("No rows generated. Check your queries file.", file=sys.stderr)
         return 1

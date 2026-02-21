@@ -258,7 +258,7 @@ def _build_crawl_payload(config: dict[str, Any]) -> dict[str, Any]:
         "ignoreQueryParameters": True,
         "ignoreRobotsTxt": config["ignore_robots_txt"],
         "scrapeOptions": {
-            "formats": ["markdown", "html", "rawHtml", "links"],
+            "formats": ["markdown", "html"],
             "onlyMainContent": False,
             "parsers": ["pdf"],
         },
@@ -371,29 +371,27 @@ def _normalize_doc(
     doc: dict[str, Any],
     *,
     target_url: str,
-    crawl_id: str,
     retrieved_at: str,
 ) -> dict[str, Any]:
-    metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+    source_metadata = (
+        doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+    )
 
     markdown = _clean_text(doc.get("markdown"))
     html = _clean_text(doc.get("html"))
-    raw_html = _clean_text(doc.get("rawHtml"))
-    summary = _clean_text(doc.get("summary"))
-    links = _as_string_list(doc.get("links"))
     images = _as_string_list(doc.get("images"))
 
-    text = _first_non_empty_text([markdown, html, raw_html, summary])
+    text = _first_non_empty_text([markdown, html])
     if not text:
         text = json.dumps(doc, ensure_ascii=False)
 
     page_url = (
-        _clean_url_candidate(metadata.get("sourceURL"))
-        or _clean_url_candidate(metadata.get("url"))
+        _clean_url_candidate(source_metadata.get("sourceURL"))
+        or _clean_url_candidate(source_metadata.get("url"))
         or _clean_url_candidate(doc.get("url"))
         or target_url
     )
-    title = str(metadata.get("title") or doc.get("title") or page_url)
+    title = str(source_metadata.get("title") or doc.get("title") or page_url)
     parsed = urlparse(page_url)
     meta_filters: dict[str, Any] = {
         "url": page_url,
@@ -401,12 +399,12 @@ def _normalize_doc(
         "source_host": parsed.netloc.lower() if parsed.netloc else "",
         "source_path": parsed.path or "/",
     }
-    if isinstance(metadata.get("statusCode"), int):
-        meta_filters["status_code"] = metadata.get("statusCode")
-    if isinstance(metadata.get("language"), str):
-        meta_filters["language"] = metadata.get("language")
-    if isinstance(metadata.get("contentType"), str):
-        meta_filters["content_type"] = metadata.get("contentType")
+    if isinstance(source_metadata.get("statusCode"), int):
+        meta_filters["status_code"] = source_metadata.get("statusCode")
+    if isinstance(source_metadata.get("language"), str):
+        meta_filters["language"] = source_metadata.get("language")
+    if isinstance(source_metadata.get("contentType"), str):
+        meta_filters["content_type"] = source_metadata.get("contentType")
 
     return {
         # Backward-compatible fields consumed by current pipeline.
@@ -416,16 +414,12 @@ def _normalize_doc(
         "word_count": len(text.split()),
         "char_count": len(text),
         # Richer RAG/debug fields.
-        "crawl_id": crawl_id,
         "retrieved_at": retrieved_at,
         "markdown": markdown,
         "html": html,
-        "raw_html": raw_html,
-        "summary": summary,
-        "links": links,
         "images": images,
         "meta_filters": meta_filters,
-        "firecrawl_metadata": metadata,
+        "metadata": source_metadata,
         "raw_document": doc,
     }
 
@@ -452,14 +446,12 @@ def _persist_batch(
     next_index: int,
     duplicates_skipped: int,
     target_url: str,
-    crawl_id: str,
 ) -> tuple[int, int]:
     retrieved_at = datetime.now(timezone.utc).isoformat()
     for doc in docs:
         page = _normalize_doc(
             doc,
             target_url=target_url,
-            crawl_id=crawl_id,
             retrieved_at=retrieved_at,
         )
         canonical = _canonical_url(str(page.get("url", "")))
@@ -545,7 +537,6 @@ def _crawl_once() -> None:
                     next_index=next_file_index,
                     duplicates_skipped=duplicates_skipped,
                     target_url=config["target_url"],
-                    crawl_id=job_id,
                 )
 
                 next_skip = _advance_skip(
@@ -583,7 +574,6 @@ def _crawl_once() -> None:
                     next_index=next_file_index,
                     duplicates_skipped=duplicates_skipped,
                     target_url=config["target_url"],
-                    crawl_id=job_id,
                 )
 
                 next_skip = _advance_skip(
@@ -612,7 +602,6 @@ def _crawl_once() -> None:
     finally:
         metadata = {
             "source": "firecrawl-crawl",
-            "crawl_id": job_id,
             "root_url": config["target_url"],
             "status": status,
             "count": next_file_index,
@@ -631,7 +620,7 @@ def _crawl_once() -> None:
                 "sitemap": "include",
                 "deduplicate_similar_urls": False,
                 "ignore_query_parameters": True,
-                "scrape_formats": ["markdown", "html", "rawHtml", "links"],
+                "scrape_formats": ["markdown", "html"],
             },
         }
         if error_message:

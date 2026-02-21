@@ -12,7 +12,7 @@ except Exception:  # pragma: no cover - optional dependency
 
 from llama_index.core import VectorStoreIndex
 from llama_index.core.node_parser import SentenceSplitter
-from llama_index.core.schema import Document
+from llama_index.core.schema import Document, MetadataMode
 from llama_index.core.storage.docstore import SimpleDocumentStore
 from llama_index.retrievers.bm25 import BM25Retriever
 
@@ -41,8 +41,14 @@ def build_bm25_retriever(
     """Build a BM25 retriever over documents (lexical search)."""
     cfg = config or BM25Config()
 
-    splitter = SentenceSplitter(chunk_size=cfg.chunk_size)
-    nodes = splitter.get_nodes_from_documents(list(documents))
+    # BM25 scoring should operate on page text only; large metadata blobs can
+    # trigger chunking failures ("Metadata length ... is longer than chunk size").
+    text_only_documents = [
+        Document(text=doc.get_content(metadata_mode=MetadataMode.NONE), metadata={})
+        for doc in documents
+    ]
+    splitter = SentenceSplitter(chunk_size=cfg.chunk_size, include_metadata=False)
+    nodes = splitter.get_nodes_from_documents(text_only_documents)
 
     docstore = SimpleDocumentStore()
     docstore.add_documents(nodes)

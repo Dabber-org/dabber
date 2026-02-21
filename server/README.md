@@ -14,6 +14,14 @@ Python MCP server that can:
 3. Embed with `BAAI/bge-base-en-v1.5` (768 dims) and store vectors in Qdrant.
 4. Initialize one hybrid retrieval tool.
 
+### Static startup behavior (`RESCRAPE`)
+- `RESCRAPE=false`:
+  - First run (no Qdrant collection): scrape + embed.
+  - Restart with existing collection and local scraped files: skip scrape/embed and reuse existing index.
+  - Existing collection but missing local scraped files: automatic recovery rebuild (scrape + embed).
+- `RESCRAPE=true`:
+  - Always force full rebuild on startup (clear collection, scrape, embed).
+
 ### Hybrid search tool (single MCP tool returning both variants)
 Tool name: `vector_db`
 - Semantic: Qdrant vector retrieval
@@ -80,6 +88,7 @@ Important vars:
 - `API_BASE_URL`: base URL for calling the API (if dynamic enabled)
 - `QDRANT_URL`: default `http://localhost:6333`
 - `QDRANT_COLLECTION_NAME`: default `latest`
+- `RESCRAPE`: startup ingest policy (`false` by default; set `true` to force rebuild every start)
 - `SCRAPE_STORAGE_DIR`: default `./scrape/storage`
 - `SCRAPE_DATASET_DIR`: default `./scrape/storage/datasets/default`
 - `EMBED_MODEL_NAME`: default `BAAI/bge-base-en-v1.5`
@@ -88,5 +97,5 @@ Important vars:
 
 ## Notes / Troubleshooting
 
-- Qdrant "collection already exists" (409) is handled by `ensure_collection(recreate=True)` in the pipeline. Collection creation does not happen at import time.
+- Qdrant collection creation/deletion is explicit in the static startup strategy. Collection creation does not happen at import time.
 - HuggingFace models are loaded lazily. If you are offline, you must have the embedding model already available in your local HF cache.

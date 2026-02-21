@@ -9,6 +9,8 @@ Modes:
 
 import asyncio
 import logging
+import os
+import warnings
 
 import httpx
 import requests
@@ -19,6 +21,27 @@ from settings import settings
 logger = logging.getLogger(__name__)
 
 SERVER_NAME = "Dabber MCP Server"
+
+
+def configure_runtime() -> None:
+    """Configure logging and platform-specific warning filters."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        force=True,
+    )
+
+    # Keep startup output readable while preserving warnings/errors.
+    for logger_name in ("httpx", "httpcore"):
+        logger_ = logging.getLogger(logger_name)
+        logger_.setLevel(logging.WARNING)
+
+    if os.name == "nt":
+        # Emitted by optional POSIX-only dependency paths; safe to ignore on Windows.
+        warnings.filterwarnings(
+            "ignore",
+            message="resource module not available on Windows",
+        )
 
 
 def update_agent_status(status: str) -> None:
@@ -119,14 +142,24 @@ async def run_server() -> None:
         pipeline_task.add_done_callback(_pipeline_done)
 
     try:
-        await mcp.run_async(transport="http", host="0.0.0.0", port=8000)
+        await mcp.run_async(
+            transport="http",
+            host="0.0.0.0",
+            port=8000,
+            uvicorn_config={
+                # Prevent Uvicorn from installing its own logging handlers on top
+                # of our root config (which can duplicate startup lines on Windows).
+                "log_config": None,
+                "access_log": False,
+            },
+        )
     except Exception:
         update_agent_status("Failed")
         raise
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+    configure_runtime()
     asyncio.run(run_server())
 
 

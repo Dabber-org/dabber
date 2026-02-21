@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     SCRAPING_URL: str = ""
     FIRECRAWL_BASE_URL: str = "http://localhost:3002"
     IS_STATIC_ENABLED: bool = True
+    # RESCRAPE startup behavior:
+    # - false: first-run ingest, restart reuse existing index.
+    # - true: force full rebuild (scrape + embed) on every startup.
+    RESCRAPE: bool = False
 
     # Query expansion (LLM-generated variants) for hybrid retrieval.
     QUERY_EXPANSION_ENABLED: bool = False
@@ -45,6 +49,9 @@ class Settings(BaseSettings):
     # Model/config knobs.
     OPENAI_API_KEY: str = ""
     EMBED_MODEL_NAME: str = "BAAI/bge-base-en-v1.5"
+    # Console progress bars for indexing; disable by default to avoid interleaved
+    # output with async HTTP logs in long-running ingestion.
+    INDEX_SHOW_PROGRESS: bool = False
 
     # Qdrant configuration.
     QDRANT_URL: str = "http://localhost:6333"

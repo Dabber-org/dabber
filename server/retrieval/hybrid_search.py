@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import re
 from typing import Any, Dict, List
 
 from llama_index.core import VectorStoreIndex
@@ -37,10 +38,25 @@ _INDEX: VectorStoreIndex | None = None
 _BM25_BASE: BM25Retriever | None = None
 
 
-def init_search(index: VectorStoreIndex, *, bm25_max_k: int = 50) -> None:
-    """Initialize global hybrid-search state (called by the indexing pipeline)."""
+def init_search(
+    index: VectorStoreIndex,
+    *,
+    bm25_max_k: int = 50,
+    bm25_retriever: BM25Retriever | None = None,
+) -> None:
+    """Initialize global hybrid-search state (called by the indexing pipeline).
+
+    Args:
+        index: Vector index used for semantic retrieval.
+        bm25_max_k: Default BM25 top-k when building BM25 from index docstore.
+        bm25_retriever: Optional prebuilt BM25 retriever.
+    """
     global _INDEX, _BM25_BASE
     _INDEX = index
+    if bm25_retriever is not None:
+        _BM25_BASE = bm25_retriever
+        return
+
     _BM25_BASE = build_bm25_from_index(
         index,
         config=BM25Config(similarity_top_k=bm25_max_k, language=None),
@@ -77,6 +93,162 @@ def _deep_copy_node(node: Any) -> Any:
         return node.model_copy(deep=True)
     except Exception:
         return copy.deepcopy(node)
+
+
+def _extract_source_metadata(node_metadata: Dict[str, Any]) -> Dict[str, Any]:
+    metadata = node_metadata.get("metadata")
+    if isinstance(metadata, dict):
+        return metadata
+    # Legacy key from older snapshots.
+    legacy_metadata = node_metadata.get("firecrawl_metadata")
+    if isinstance(legacy_metadata, dict):
+        return legacy_metadata
+    return {}
+
+
+def _node_matches_metadata_filters(
+    node_metadata: Dict[str, Any],
+    *,
+    filter_host: str | None,
+    filter_path_prefix: str | None,
+    filter_language: str | None,
+    filter_content_type: str | None,
+    filter_status_code: int | None,
+) -> bool:
+    meta_filters = node_metadata.get("meta_filters")
+    meta_filters_dict = meta_filters if isinstance(meta_filters, dict) else {}
+    source_metadata = _extract_source_metadata(node_metadata)
+
+    source_host = str(meta_filters_dict.get("source_host") or "").strip().lower()
+    source_path = str(meta_filters_dict.get("source_path") or "").strip()
+    language = str(
+        meta_filters_dict.get("language") or source_metadata.get("language") or ""
+    ).strip().lower()
+    content_type = str(
+        meta_filters_dict.get("content_type")
+        or source_metadata.get("contentType")
+        or ""
+    ).strip().lower()
+
+    status_code_raw = (
+        meta_filters_dict.get("status_code") or source_metadata.get("statusCode")
+    )
+    try:
+        status_code = int(status_code_raw) if status_code_raw is not None else None
+    except Exception:
+        status_code = None
+
+    if filter_host and source_host != filter_host.strip().lower():
+        return False
+    if filter_path_prefix and not source_path.startswith(filter_path_prefix.strip()):
+        return False
+    if filter_language and language != filter_language.strip().lower():
+        return False
+    if filter_content_type and filter_content_type.strip().lower() not in content_type:
+        return False
+    if filter_status_code is not None and status_code != int(filter_status_code):
+        return False
+    return True
+
+
+def _filter_nodes_by_metadata(
+    nodes: List[NodeWithScore],
+    *,
+    filter_host: str | None,
+    filter_path_prefix: str | None,
+    filter_language: str | None,
+    filter_content_type: str | None,
+    filter_status_code: int | None,
+) -> List[NodeWithScore]:
+    if not any(
+        (
+            filter_host,
+            filter_path_prefix,
+            filter_language,
+            filter_content_type,
+            filter_status_code is not None,
+        )
+    ):
+        return nodes
+
+    filtered: List[NodeWithScore] = []
+    for node_with_score in nodes:
+        metadata = getattr(node_with_score.node, "metadata", None)
+        node_metadata = metadata if isinstance(metadata, dict) else {}
+        if _node_matches_metadata_filters(
+            node_metadata,
+            filter_host=filter_host,
+            filter_path_prefix=filter_path_prefix,
+            filter_language=filter_language,
+            filter_content_type=filter_content_type,
+            filter_status_code=filter_status_code,
+        ):
+            filtered.append(node_with_score)
+    return filtered
+
+
+def _metadata_rank_bonus(
+    query: str,
+    node_metadata: Dict[str, Any],
+    *,
+    metadata_rank_boost: float,
+) -> float:
+    if metadata_rank_boost <= 0:
+        return 0.0
+
+    query_tokens = {
+        tok for tok in re.findall(r"[a-z0-9]+", query.lower()) if len(tok) >= 3
+    }
+    if not query_tokens:
+        return 0.0
+
+    source_metadata = _extract_source_metadata(node_metadata)
+    text_fields = [
+        node_metadata.get("title"),
+        node_metadata.get("url"),
+        source_metadata.get("title"),
+        source_metadata.get("description"),
+        source_metadata.get("ogTitle"),
+        source_metadata.get("og:description"),
+        source_metadata.get("sourceURL"),
+        source_metadata.get("contentType"),
+    ]
+    corpus = " ".join(str(v) for v in text_fields if isinstance(v, str) and v.strip())
+    if not corpus:
+        return 0.0
+
+    corpus_tokens = {
+        tok for tok in re.findall(r"[a-z0-9]+", corpus.lower()) if len(tok) >= 3
+    }
+    overlap = len(query_tokens.intersection(corpus_tokens))
+    if overlap == 0:
+        return 0.0
+
+    return metadata_rank_boost * (overlap / len(query_tokens))
+
+
+def _rerank_by_metadata(
+    nodes: List[NodeWithScore],
+    *,
+    query: str,
+    metadata_rank_boost: float,
+) -> List[NodeWithScore]:
+    if metadata_rank_boost <= 0:
+        return nodes
+
+    reranked: List[NodeWithScore] = []
+    for node_with_score in nodes:
+        metadata = getattr(node_with_score.node, "metadata", None)
+        node_metadata = metadata if isinstance(metadata, dict) else {}
+        bonus = _metadata_rank_bonus(
+            query,
+            node_metadata,
+            metadata_rank_boost=metadata_rank_boost,
+        )
+        node_with_score.score = float(node_with_score.score or 0.0) + bonus
+        reranked.append(node_with_score)
+
+    return sorted(reranked, key=lambda x: x.score or 0.0, reverse=True)
 
 
 def _rrf_fuse(
@@ -116,6 +288,12 @@ async def vector_db(
     compress_percentile: float = 0.2,
     context_before: int = 1,
     context_after: int = 1,
+    filter_host: str | None = None,
+    filter_path_prefix: str | None = None,
+    filter_language: str | None = None,
+    filter_content_type: str | None = None,
+    filter_status_code: int | None = None,
+    metadata_rank_boost: float = 0.2,
 ) -> Dict[str, Any]:
     """Hybrid page-level retrieval (MCP tool: vector_db) that returns both snippet + conditional compression.
 
@@ -127,6 +305,8 @@ async def vector_db(
         lexical_top_k: Candidate pool size for BM25 retrieval.
         compress_percentile: Percent of sentences to keep when compressing long pages.
         context_before/context_after: Neighbor sentences to include around selected sentences.
+        filter_*: Optional metadata filters applied before final ranking/output.
+        metadata_rank_boost: Metadata-match score boost for final reranking.
     """
     if _INDEX is None or _BM25_BASE is None:
         return {"error": "search_not_ready"}
@@ -160,7 +340,21 @@ async def vector_db(
             vector_retriever.aretrieve(query_bundle),
             bm25_retriever.aretrieve(query_bundle),
         )
-        nodes = _rrf_fuse([vector_nodes, bm25_nodes])[:n_results]
+        nodes = _rrf_fuse([vector_nodes, bm25_nodes])
+
+    nodes = _filter_nodes_by_metadata(
+        nodes,
+        filter_host=filter_host,
+        filter_path_prefix=filter_path_prefix,
+        filter_language=filter_language,
+        filter_content_type=filter_content_type,
+        filter_status_code=filter_status_code,
+    )
+    nodes = _rerank_by_metadata(
+        nodes,
+        query=query,
+        metadata_rank_boost=metadata_rank_boost,
+    )[:n_results]
 
     results: List[Dict[str, Any]] = []
     for rank, nws in enumerate(nodes, start=1):
@@ -235,5 +429,11 @@ async def vector_db(
         "compress_percentile": compress_percentile,
         "context_before": context_before,
         "context_after": context_after,
+        "filter_host": filter_host,
+        "filter_path_prefix": filter_path_prefix,
+        "filter_language": filter_language,
+        "filter_content_type": filter_content_type,
+        "filter_status_code": filter_status_code,
+        "metadata_rank_boost": metadata_rank_boost,
         "results": results,
     }
