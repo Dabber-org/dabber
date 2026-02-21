@@ -35,6 +35,7 @@ class Settings(BaseSettings):
 
     # Static mode: scrape + index into Qdrant, and enable retrieval tool.
     SCRAPING_URL: str = ""
+    FIRECRAWL_BASE_URL: str = "http://localhost:3002"
     IS_STATIC_ENABLED: bool = True
 
     # Query expansion (LLM-generated variants) for hybrid retrieval.
