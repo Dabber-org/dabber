@@ -27,6 +27,26 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
@@ -353,19 +373,51 @@ def main() -> int:
             "Defaults to MCP_URL env var or http://localhost:8000/mcp."
         ),
     )
-    parser.add_argument("--n-results", type=int, default=5)
-    parser.add_argument("--max-chars", type=int, default=2000)
-    parser.add_argument("--semantic-top-k", type=int, default=30)
-    parser.add_argument("--lexical-top-k", type=int, default=30)
-    parser.add_argument("--compress-percentile", type=float, default=0.2)
-    parser.add_argument("--context-before", type=int, default=1)
-    parser.add_argument("--context-after", type=int, default=1)
+    parser.add_argument(
+        "--n-results",
+        type=int,
+        default=_env_int("RETRIEVAL_N_RESULTS_DEFAULT", 8),
+    )
+    parser.add_argument(
+        "--max-chars",
+        type=int,
+        default=_env_int("RETRIEVAL_MAX_CHARS_DEFAULT", 2000),
+    )
+    parser.add_argument(
+        "--semantic-top-k",
+        type=int,
+        default=_env_int("RETRIEVAL_SEMANTIC_TOP_K_DEFAULT", 36),
+    )
+    parser.add_argument(
+        "--lexical-top-k",
+        type=int,
+        default=_env_int("RETRIEVAL_LEXICAL_TOP_K_DEFAULT", 36),
+    )
+    parser.add_argument(
+        "--compress-percentile",
+        type=float,
+        default=_env_float("RETRIEVAL_COMPRESS_PERCENTILE_DEFAULT", 0.2),
+    )
+    parser.add_argument(
+        "--context-before",
+        type=int,
+        default=_env_int("RETRIEVAL_CONTEXT_BEFORE_DEFAULT", 1),
+    )
+    parser.add_argument(
+        "--context-after",
+        type=int,
+        default=_env_int("RETRIEVAL_CONTEXT_AFTER_DEFAULT", 1),
+    )
     parser.add_argument("--filter-host", default=None)
     parser.add_argument("--filter-path-prefix", default=None)
     parser.add_argument("--filter-language", default=None)
     parser.add_argument("--filter-content-type", default=None)
     parser.add_argument("--filter-status-code", type=int, default=None)
-    parser.add_argument("--metadata-rank-boost", type=float, default=0.2)
+    parser.add_argument(
+        "--metadata-rank-boost",
+        type=float,
+        default=_env_float("RETRIEVAL_METADATA_RANK_BOOST_DEFAULT", 0.35),
+    )
     parser.add_argument(
         "--llm-judge",
         choices=["auto", "on", "off"],

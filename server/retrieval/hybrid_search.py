@@ -18,7 +18,9 @@ from __future__ import annotations
 import asyncio
 import copy
 import re
-from typing import Any, Dict, List
+from statistics import mean
+from typing import Any, Dict, List, Set
+from urllib.parse import urlsplit, urlunsplit
 
 from llama_index.core import VectorStoreIndex
 from llama_index.core.postprocessor.optimizer import SentenceEmbeddingOptimizer
@@ -104,6 +106,202 @@ def _extract_source_metadata(node_metadata: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(legacy_metadata, dict):
         return legacy_metadata
     return {}
+
+
+def _extract_node_url(node_metadata: Dict[str, Any]) -> str:
+    """Return the best available URL for a node from normalized metadata keys."""
+    direct_url = node_metadata.get("url")
+    if isinstance(direct_url, str) and direct_url.strip():
+        return direct_url.strip()
+
+    source_metadata = _extract_source_metadata(node_metadata)
+    for key in ("sourceURL", "url", "ogUrl", "canonical"):
+        value = source_metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _normalize_url_for_dedupe(url: str) -> str:
+    """Normalize URL for stable dedupe (scheme/host case, trailing slash, query/fragment)."""
+    normalized = url.strip()
+    if not normalized:
+        return normalized
+
+    try:
+        parsed = urlsplit(normalized)
+    except Exception:
+        return normalized.lower().rstrip("/")
+
+    if not parsed.scheme and not parsed.netloc:
+        return normalized.lower().rstrip("/")
+
+    path = parsed.path or "/"
+    path = re.sub(r"/{2,}", "/", path)
+    if path != "/":
+        path = path.rstrip("/")
+
+    return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), path, "", ""))
+
+
+def _dedupe_nodes_by_source(nodes: List[NodeWithScore]) -> List[NodeWithScore]:
+    """Keep the highest-ranked node per canonical source URL."""
+    deduped: List[NodeWithScore] = []
+    seen_keys: set[str] = set()
+
+    for node_with_score in nodes:
+        metadata = getattr(node_with_score.node, "metadata", None)
+        node_metadata = metadata if isinstance(metadata, dict) else {}
+
+        source_url = _normalize_url_for_dedupe(_extract_node_url(node_metadata))
+        if source_url:
+            dedupe_key = f"url:{source_url}"
+        else:
+            node_hash = getattr(node_with_score.node, "hash", "") or getattr(
+                node_with_score.node, "node_id", ""
+            )
+            dedupe_key = f"node:{node_hash}"
+
+        if dedupe_key in seen_keys:
+            continue
+
+        seen_keys.add(dedupe_key)
+        deduped.append(node_with_score)
+
+    return deduped
+
+
+def _query_anchored_snippet(text: str, query: str, max_chars: int) -> str:
+    """Build a snippet around the longest matching query token when possible."""
+    if max_chars <= 0:
+        return ""
+    if len(text) <= max_chars:
+        return text
+
+    query_tokens = sorted(
+        {tok for tok in re.findall(r"[a-z0-9]+", query.lower()) if len(tok) >= 3},
+        key=len,
+        reverse=True,
+    )
+    text_lower = text.lower()
+
+    anchor = -1
+    for token in query_tokens:
+        index = text_lower.find(token)
+        if index >= 0:
+            anchor = index
+            break
+
+    if anchor < 0:
+        return text[:max_chars]
+
+    half = max_chars // 2
+    start = max(0, anchor - half)
+    end = min(len(text), start + max_chars)
+    if end - start < max_chars:
+        start = max(0, end - max_chars)
+    return text[start:end]
+
+
+def _clamp_int(
+    value: int,
+    *,
+    min_value: int,
+    max_value: int,
+) -> int:
+    return max(min_value, min(max_value, int(value)))
+
+
+def _clamp_float(
+    value: float,
+    *,
+    min_value: float,
+    max_value: float,
+) -> float:
+    return max(min_value, min(max_value, float(value)))
+
+
+def _query_tokens(query: str) -> Set[str]:
+    return {tok for tok in re.findall(r"[a-z0-9]+", query.lower()) if len(tok) >= 3}
+
+
+def _expand_query_rule_based(query: str) -> str:
+    tokens = _query_tokens(query)
+    extra_terms: List[str] = []
+
+    if "dean" in tokens:
+        extra_terms.extend(["head", "department head", "dean office"])
+    if "head" in tokens:
+        extra_terms.extend(["dean", "department dean"])
+    if "coordinator" in tokens:
+        extra_terms.extend(["program coordinator", "academic coordinator"])
+    if "office" in tokens or "where" in tokens or "location" in tokens:
+        extra_terms.extend(["room", "building", "contact"])
+
+    if not extra_terms:
+        return query
+
+    # Keep deterministic ordering and avoid duplicate terms.
+    deduped_terms: List[str] = []
+    seen: Set[str] = set()
+    for term in extra_terms:
+        key = term.lower().strip()
+        if key and key not in seen:
+            seen.add(key)
+            deduped_terms.append(term)
+    return f"{query} {' '.join(deduped_terms)}"
+
+
+def _snippet_query_coverage(snippet: str, query_tokens: Set[str]) -> float:
+    if not query_tokens:
+        return 1.0
+    snippet_tokens = set(re.findall(r"[a-z0-9]+", snippet.lower()))
+    if not snippet_tokens:
+        return 0.0
+    overlap = len(query_tokens.intersection(snippet_tokens))
+    return overlap / len(query_tokens)
+
+
+def _node_source_key(node_with_score: NodeWithScore) -> str:
+    metadata = getattr(node_with_score.node, "metadata", None)
+    node_metadata = metadata if isinstance(metadata, dict) else {}
+    source_url = _normalize_url_for_dedupe(_extract_node_url(node_metadata))
+    if source_url:
+        return source_url
+    node_hash = getattr(node_with_score.node, "hash", "") or getattr(
+        node_with_score.node, "node_id", ""
+    )
+    return str(node_hash or "")
+
+
+def _estimate_retrieval_confidence(
+    nodes: List[NodeWithScore],
+    *,
+    query: str,
+    max_chars: int,
+) -> float:
+    if not nodes:
+        return 0.0
+
+    query_toks = _query_tokens(query)
+    snippet_coverages: List[float] = []
+    source_keys: Set[str] = set()
+
+    for node_with_score in nodes:
+        node = node_with_score.node
+        text = node.get_content(metadata_mode=MetadataMode.NONE)
+        snippet = _query_anchored_snippet(text, query, max_chars)
+        snippet_coverages.append(_snippet_query_coverage(snippet, query_toks))
+        source_key = _node_source_key(node_with_score)
+        if source_key:
+            source_keys.add(source_key)
+
+    top_coverage = max(snippet_coverages) if snippet_coverages else 0.0
+    mean_top3 = mean(sorted(snippet_coverages, reverse=True)[:3]) if snippet_coverages else 0.0
+    source_diversity = min(1.0, len(source_keys) / 2.0)
+
+    # Weighted blend: strongest evidence + consistency + cross-source support.
+    return (0.45 * top_coverage) + (0.35 * mean_top3) + (0.20 * source_diversity)
 
 
 def _node_matches_metadata_filters(
@@ -280,20 +478,20 @@ def _rrf_fuse(
 
 async def vector_db(
     query: str,
-    n_results: int = 5,
+    n_results: int = settings.RETRIEVAL_N_RESULTS_DEFAULT,
     *,
-    max_chars: int = 2000,
-    semantic_top_k: int = 30,
-    lexical_top_k: int = 30,
-    compress_percentile: float = 0.2,
-    context_before: int = 1,
-    context_after: int = 1,
+    max_chars: int = settings.RETRIEVAL_MAX_CHARS_DEFAULT,
+    semantic_top_k: int = settings.RETRIEVAL_SEMANTIC_TOP_K_DEFAULT,
+    lexical_top_k: int = settings.RETRIEVAL_LEXICAL_TOP_K_DEFAULT,
+    compress_percentile: float = settings.RETRIEVAL_COMPRESS_PERCENTILE_DEFAULT,
+    context_before: int = settings.RETRIEVAL_CONTEXT_BEFORE_DEFAULT,
+    context_after: int = settings.RETRIEVAL_CONTEXT_AFTER_DEFAULT,
     filter_host: str | None = None,
     filter_path_prefix: str | None = None,
     filter_language: str | None = None,
     filter_content_type: str | None = None,
     filter_status_code: int | None = None,
-    metadata_rank_boost: float = 0.2,
+    metadata_rank_boost: float = settings.RETRIEVAL_METADATA_RANK_BOOST_DEFAULT,
 ) -> Dict[str, Any]:
     """Hybrid page-level retrieval (MCP tool: vector_db) that returns both snippet + conditional compression.
 
@@ -311,50 +509,139 @@ async def vector_db(
     if _INDEX is None or _BM25_BASE is None:
         return {"error": "search_not_ready"}
 
-    vector_retriever = _INDEX.as_retriever(similarity_top_k=semantic_top_k)
-    bm25_retriever = TopKWrapperRetriever(_BM25_BASE, top_k=lexical_top_k)
+    # Guardrails to keep latency/cost predictable and avoid pathological inputs.
+    n_results = _clamp_int(n_results, min_value=1, max_value=50)
+    max_chars = _clamp_int(max_chars, min_value=256, max_value=8000)
+    semantic_top_k = _clamp_int(semantic_top_k, min_value=1, max_value=200)
+    lexical_top_k = _clamp_int(lexical_top_k, min_value=1, max_value=200)
+    compress_percentile = _clamp_float(
+        compress_percentile,
+        min_value=0.05,
+        max_value=1.0,
+    )
+    context_before = _clamp_int(context_before, min_value=0, max_value=3)
+    context_after = _clamp_int(context_after, min_value=0, max_value=3)
+    metadata_rank_boost = _clamp_float(metadata_rank_boost, min_value=0.0, max_value=1.0)
 
-    query_bundle = QueryBundle(query)
+    # Ensure candidate pools are at least as large as requested final output.
+    semantic_top_k = max(semantic_top_k, n_results)
+    lexical_top_k = max(lexical_top_k, n_results)
+
+    retrieval_query = (
+        _expand_query_rule_based(query)
+        if settings.RETRIEVAL_RULE_BASED_QUERY_EXPANSION_ENABLED
+        else query
+    )
+    query_bundle = QueryBundle(retrieval_query)
     use_query_expansion = (
         settings.QUERY_EXPANSION_ENABLED
         and settings.QUERY_EXPANSION_NUM_QUERIES > 1
     )
 
-    if use_query_expansion:
-        try:
+    async def _retrieve_nodes(
+        *,
+        current_n_results: int,
+        current_semantic_top_k: int,
+        current_lexical_top_k: int,
+    ) -> List[NodeWithScore]:
+        vector_retriever = _INDEX.as_retriever(similarity_top_k=current_semantic_top_k)
+        bm25_retriever = TopKWrapperRetriever(_BM25_BASE, top_k=current_lexical_top_k)
+
+        if use_query_expansion:
             hybrid = QueryFusionRetriever(
                 retrievers=[vector_retriever, bm25_retriever],
                 mode=FUSION_MODES.RECIPROCAL_RANK,
-                similarity_top_k=n_results,
+                similarity_top_k=current_n_results,
                 num_queries=settings.QUERY_EXPANSION_NUM_QUERIES,
                 use_async=True,
             )
-            nodes: List[NodeWithScore] = await hybrid.aretrieve(query_bundle)
-        except ValueError as exc:
-            return {
-                "error": "llm_not_configured",
-                "detail": str(exc),
-            }
-    else:
-        vector_nodes, bm25_nodes = await asyncio.gather(
-            vector_retriever.aretrieve(query_bundle),
-            bm25_retriever.aretrieve(query_bundle),
-        )
-        nodes = _rrf_fuse([vector_nodes, bm25_nodes])
+            candidate_nodes: List[NodeWithScore] = await hybrid.aretrieve(query_bundle)
+        else:
+            vector_nodes, bm25_nodes = await asyncio.gather(
+                vector_retriever.aretrieve(query_bundle),
+                bm25_retriever.aretrieve(query_bundle),
+            )
+            candidate_nodes = _rrf_fuse([vector_nodes, bm25_nodes])
 
-    nodes = _filter_nodes_by_metadata(
-        nodes,
-        filter_host=filter_host,
-        filter_path_prefix=filter_path_prefix,
-        filter_language=filter_language,
-        filter_content_type=filter_content_type,
-        filter_status_code=filter_status_code,
+        candidate_nodes = _filter_nodes_by_metadata(
+            candidate_nodes,
+            filter_host=filter_host,
+            filter_path_prefix=filter_path_prefix,
+            filter_language=filter_language,
+            filter_content_type=filter_content_type,
+            filter_status_code=filter_status_code,
+        )
+        candidate_nodes = _rerank_by_metadata(
+            candidate_nodes,
+            query=query,
+            metadata_rank_boost=metadata_rank_boost,
+        )
+        return _dedupe_nodes_by_source(candidate_nodes)[:current_n_results]
+
+    try:
+        nodes: List[NodeWithScore] = await _retrieve_nodes(
+            current_n_results=n_results,
+            current_semantic_top_k=semantic_top_k,
+            current_lexical_top_k=lexical_top_k,
+        )
+    except ValueError as exc:
+        return {
+            "error": "llm_not_configured",
+            "detail": str(exc),
+        }
+
+    adaptive_enabled = bool(settings.RETRIEVAL_ADAPTIVE_ENABLED)
+    escalation_semantic_top_k = _clamp_int(
+        settings.RETRIEVAL_ESCALATION_SEMANTIC_TOP_K,
+        min_value=1,
+        max_value=200,
     )
-    nodes = _rerank_by_metadata(
+    escalation_lexical_top_k = _clamp_int(
+        settings.RETRIEVAL_ESCALATION_LEXICAL_TOP_K,
+        min_value=1,
+        max_value=200,
+    )
+    min_confidence_to_skip_escalation = _clamp_float(
+        settings.RETRIEVAL_MIN_CONFIDENCE_TO_SKIP_ESCALATION,
+        min_value=0.0,
+        max_value=1.0,
+    )
+
+    retrieval_confidence = _estimate_retrieval_confidence(
         nodes,
         query=query,
-        metadata_rank_boost=metadata_rank_boost,
-    )[:n_results]
+        max_chars=max_chars,
+    )
+    retrieval_escalated = False
+
+    if adaptive_enabled and retrieval_confidence < min_confidence_to_skip_escalation:
+        target_semantic_top_k = max(semantic_top_k, escalation_semantic_top_k, n_results)
+        target_lexical_top_k = max(lexical_top_k, escalation_lexical_top_k, n_results)
+        if target_semantic_top_k > semantic_top_k or target_lexical_top_k > lexical_top_k:
+            nodes = await _retrieve_nodes(
+                current_n_results=n_results,
+                current_semantic_top_k=target_semantic_top_k,
+                current_lexical_top_k=target_lexical_top_k,
+            )
+            retrieval_confidence = _estimate_retrieval_confidence(
+                nodes,
+                query=query,
+                max_chars=max_chars,
+            )
+            retrieval_escalated = True
+
+    max_compressed_results = _clamp_int(
+        settings.RETRIEVAL_MAX_COMPRESSED_RESULTS,
+        min_value=0,
+        max_value=20,
+    )
+    min_snippet_query_coverage = _clamp_float(
+        settings.RETRIEVAL_MIN_SNIPPET_QUERY_COVERAGE,
+        min_value=0.0,
+        max_value=1.0,
+    )
+    query_toks = _query_tokens(query)
+    compression_budget_used = 0
 
     results: List[Dict[str, Any]] = []
     for rank, nws in enumerate(nodes, start=1):
@@ -362,7 +649,8 @@ async def vector_db(
         original_text = node.get_content(metadata_mode=MetadataMode.NONE)
         original_chars = len(original_text)
 
-        snippet_text = original_text[:max_chars]
+        snippet_text = _query_anchored_snippet(original_text, query, max_chars)
+        snippet_query_coverage = _snippet_query_coverage(snippet_text, query_toks)
         snippet_truncated = original_chars > max_chars
 
         compression_applied = False
@@ -370,7 +658,16 @@ async def vector_db(
         compressed_truncated = False
         compression_error = None
 
-        if original_chars > max_chars:
+        should_attempt_compression = (
+            original_chars > max_chars
+            and compression_budget_used < max_compressed_results
+            and (
+                rank <= max_compressed_results
+                or snippet_query_coverage < min_snippet_query_coverage
+            )
+        )
+
+        if should_attempt_compression:
             try:
                 node_copy = _deep_copy_node(node)
                 if getattr(node_copy, "metadata", None):
@@ -401,6 +698,7 @@ async def vector_db(
                 compressed_truncated = len(compressed_full) > max_chars
                 compressed_text = compressed_full[:max_chars]
                 compression_applied = True
+                compression_budget_used += 1
             except Exception as e:
                 compression_error = str(e)
 
@@ -412,6 +710,7 @@ async def vector_db(
                 "metadata": _json_safe(getattr(node, "metadata", {}) or {}),
                 "original_chars": original_chars,
                 "snippet_text": snippet_text,
+                "snippet_query_coverage": round(snippet_query_coverage, 4),
                 "snippet_truncated": snippet_truncated,
                 "compressed_text": compressed_text,
                 "compression_applied": compression_applied,
@@ -422,6 +721,7 @@ async def vector_db(
 
     return {
         "query": query,
+        "retrieval_query": retrieval_query,
         "n_results": n_results,
         "max_chars": max_chars,
         "semantic_top_k": semantic_top_k,
@@ -435,5 +735,12 @@ async def vector_db(
         "filter_content_type": filter_content_type,
         "filter_status_code": filter_status_code,
         "metadata_rank_boost": metadata_rank_boost,
+        "adaptive_enabled": adaptive_enabled,
+        "rule_based_query_expansion_enabled": settings.RETRIEVAL_RULE_BASED_QUERY_EXPANSION_ENABLED,
+        "retrieval_confidence": round(retrieval_confidence, 4),
+        "retrieval_escalated": retrieval_escalated,
+        "min_confidence_to_skip_escalation": min_confidence_to_skip_escalation,
+        "max_compressed_results": max_compressed_results,
+        "min_snippet_query_coverage": min_snippet_query_coverage,
         "results": results,
     }

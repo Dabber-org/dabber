@@ -94,6 +94,21 @@ Important vars:
 - `EMBED_MODEL_NAME`: default `BAAI/bge-base-en-v1.5`
 - `QUERY_EXPANSION_ENABLED`: enable LLM query expansion for hybrid retrieval (default `false`, requires an LLM configuration; OpenAI by default)
 - `QUERY_EXPANSION_NUM_QUERIES`: number of expanded queries when enabled (default `4`)
+- `RETRIEVAL_N_RESULTS_DEFAULT`: default final results returned by `vector_db` (default `8`)
+- `RETRIEVAL_MAX_CHARS_DEFAULT`: snippet/compressed char budget per result (default `2000`)
+- `RETRIEVAL_SEMANTIC_TOP_K_DEFAULT`: semantic candidate pool size for the initial pass (default `36`)
+- `RETRIEVAL_LEXICAL_TOP_K_DEFAULT`: BM25 candidate pool size for the initial pass (default `36`)
+- `RETRIEVAL_COMPRESS_PERCENTILE_DEFAULT`: sentence compression keep-rate for long docs (default `0.2`)
+- `RETRIEVAL_CONTEXT_BEFORE_DEFAULT`: neighbor sentences before selected sentence (default `1`)
+- `RETRIEVAL_CONTEXT_AFTER_DEFAULT`: neighbor sentences after selected sentence (default `1`)
+- `RETRIEVAL_METADATA_RANK_BOOST_DEFAULT`: metadata relevance boost strength (default `0.35`)
+- `RETRIEVAL_ADAPTIVE_ENABLED`: enable confidence-based escalation from cheap pass to deep pass (default `true`)
+- `RETRIEVAL_ESCALATION_SEMANTIC_TOP_K`: semantic top-k used when escalation triggers (default `80`)
+- `RETRIEVAL_ESCALATION_LEXICAL_TOP_K`: BM25 top-k used when escalation triggers (default `80`)
+- `RETRIEVAL_MIN_CONFIDENCE_TO_SKIP_ESCALATION`: confidence threshold for staying on cheap pass (default `0.65`)
+- `RETRIEVAL_MAX_COMPRESSED_RESULTS`: max long pages per query that run sentence compression (default `3`)
+- `RETRIEVAL_MIN_SNIPPET_QUERY_COVERAGE`: minimum snippet query-token coverage before skipping extra compression (default `0.35`)
+- `RETRIEVAL_RULE_BASED_QUERY_EXPANSION_ENABLED`: enable zero-cost synonym expansion for retrieval query (default `true`)
 
 ## Notes / Troubleshooting
 
