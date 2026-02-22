@@ -1,0 +1,70 @@
+name: Build and Deploy Dashboard
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - "dashboard/**"
+            - ".github/workflows/dashboard-build-and-deploy.yml"
+    workflow_dispatch:
+
+env:
+    REGISTRY: ghcr.io
+    DOKPLOY_COMPOSE_ID: "KISZbEHAddHFh_8rsbPPT"
+jobs:
+    build-and-push:
+        name: Build and Push ${{ matrix.image }}
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            packages: write
+
+        strategy:
+            matrix:
+                include:
+                    - image: dashboard
+                      context: ./dashboard
+                      dockerfile: ./dashboard/Dockerfile
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Log in to GitHub Container Registry
+              uses: docker/login-action@v3
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Extract metadata
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
+                  tags: |
+                      type=raw,value=latest
+                      type=sha,format=long
+
+            - name: Build and push Docker image
+              uses: docker/build-push-action@v6
+              with:
+                  context: ${{ matrix.context }}
+                  file: ${{ matrix.dockerfile }}
+                  build-args: PUBLIC_BUILD_ENV_FILE=deployment/.env.production
+                  push: true
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: |
+                      ${{ steps.meta.outputs.labels }}
+                      org.opencontainers.image.source=https://github.com/${{ github.repository }}
+    deploy:
+        runs-on: ubuntu-latest
+        needs:
+            - build-and-push
+        steps:
+            - name: Dokploy Deployment
+              uses: ahmedabdou14/dokploy-deploy-gha@1.1.0
+              with:
+                  auth_token: ${{ secrets.DOKPLOY_APIKEY }}
+                  dokploy_url: ${{ secrets.DOKPLOY_URL }}
+                  compose_id: ${{ env.DOKPLOY_COMPOSE_ID }}

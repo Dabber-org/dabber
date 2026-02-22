@@ -2,6 +2,7 @@ import { IconUserFilled, IconSettings } from "@tabler/icons-react";
 import type { UIMessage } from "ai";
 import AgentName from "./AgentName";
 import Markdown from "./Markdown";
+import Image from "next/image";
 
 interface Props {
   message: UIMessage;
@@ -24,7 +25,7 @@ export default function MessageBubble({ message, onToggleTools }: Props) {
             </div>
           ) : (
             <div className="flex items-center gap-3">
-              <img
+              <Image
                 src="/Dabber-face.svg"
                 alt="Assistant"
                 className="w-10 h-10 flex-shrink-0"
@@ -42,7 +43,7 @@ export default function MessageBubble({ message, onToggleTools }: Props) {
             <div className="markdown-content">
               {message.parts.map((part, i) =>
                 part.type === "text" ? (
-                  <Markdown key={`${message.id}-${i}`}>{part.text}</Markdown>
+                  <Markdown key={`${message.id}-${i}`} content={part.text} />
                 ) : null
               )}
             </div>

@@ -255,3 +255,50 @@ body {
     opacity: 1;
   }
 }
+
+/* Enhanced markdown content styling */
+.markdown-content {
+  line-height: 1.7;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.markdown-content > *:first-child {
+  margin-top: 0 !important;
+}
+
+.markdown-content > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Better code block scrolling */
+.markdown-content pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Better table responsiveness */
+.markdown-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Task list styling */
+.markdown-content input[type="checkbox"] {
+  margin-right: 0.5rem;
+  cursor: default;
+}
+
+/* Better spacing for nested lists */
+.markdown-content li > ul,
+.markdown-content li > ol {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Smooth transitions for interactive elements */
+.markdown-content a,
+.markdown-content button {
+  transition: all 0.2s ease;
+}
