@@ -21,6 +21,7 @@ from llama_index.vector_stores.qdrant import QdrantVectorStore
 from qdrant_client import AsyncQdrantClient
 
 from embeddings import get_embed_model
+from pipeline.config import pipeline_settings
 from retrieval.bm25 import BM25Config, build_bm25_retriever
 from retrieval.hybrid_search import init_search
 from scrape.json_page_reader import ScrapeJSONPageReader
@@ -61,7 +62,7 @@ def _collection_exists() -> bool:
 
 
 def _has_local_scraped_pages() -> bool:
-    dataset_dir = Path(settings.SCRAPE_DATASET_DIR)
+    dataset_dir = Path(pipeline_settings.SCRAPE_DATASET_DIR)
     if not dataset_dir.exists():
         return False
     for page_file in dataset_dir.rglob("*.json"):
@@ -72,7 +73,7 @@ def _has_local_scraped_pages() -> bool:
 
 def _load_documents():
     reader = SimpleDirectoryReader(
-        input_dir=settings.SCRAPE_DATASET_DIR,
+        input_dir=pipeline_settings.SCRAPE_DATASET_DIR,
         recursive=True,
         exclude=["__metadata__.json"],
         # Page-level for PDFs and web pages.
@@ -113,7 +114,7 @@ async def _full_ingest(*, recreate: bool) -> None:
         storage_context=storage_context,
         use_async=True,
         transformations=[],
-        show_progress=settings.INDEX_SHOW_PROGRESS,
+        show_progress=pipeline_settings.INDEX_SHOW_PROGRESS,
         store_nodes_override=True,  # keep nodes in docstore for BM25
     )
     init_search(index)

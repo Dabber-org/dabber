@@ -5,7 +5,7 @@
 Entry point: `app.py`.
 
 At runtime the server:
-1. Loads settings from `.env` (`settings.py`).
+1. Loads settings from `.env` (`settings.py` for core app settings, and feature-specific `*/config.py` modules for retrieval/pipeline/storage tuning).
 2. Chooses a mode (dynamic, static, both) in `resolve_mode()`.
 3. If dynamic is enabled, generates MCP tools from an OpenAPI spec.
 4. If static is enabled:

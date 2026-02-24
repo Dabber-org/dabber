@@ -11,11 +11,11 @@ from functools import lru_cache
 
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
-from settings import settings
+from pipeline.config import pipeline_settings
 
 
 @lru_cache(maxsize=1)
 def get_embed_model() -> HuggingFaceEmbedding:
     """Return the configured embedding model (cached)."""
-    return HuggingFaceEmbedding(model_name=settings.EMBED_MODEL_NAME)
+    return HuggingFaceEmbedding(model_name=pipeline_settings.EMBED_MODEL_NAME)
 

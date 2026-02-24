@@ -34,7 +34,7 @@ from llama_index.core.utils import globals_helper
 from llama_index.retrievers.bm25 import BM25Retriever
 
 from retrieval.bm25 import BM25Config, build_bm25_from_index
-from settings import settings
+from retrieval.config import retrieval_settings
 
 _INDEX: VectorStoreIndex | None = None
 _BM25_BASE: BM25Retriever | None = None
@@ -478,20 +478,20 @@ def _rrf_fuse(
 
 async def vector_db(
     query: str,
-    n_results: int = settings.RETRIEVAL_N_RESULTS_DEFAULT,
+    n_results: int = retrieval_settings.RETRIEVAL_N_RESULTS_DEFAULT,
     *,
-    max_chars: int = settings.RETRIEVAL_MAX_CHARS_DEFAULT,
-    semantic_top_k: int = settings.RETRIEVAL_SEMANTIC_TOP_K_DEFAULT,
-    lexical_top_k: int = settings.RETRIEVAL_LEXICAL_TOP_K_DEFAULT,
-    compress_percentile: float = settings.RETRIEVAL_COMPRESS_PERCENTILE_DEFAULT,
-    context_before: int = settings.RETRIEVAL_CONTEXT_BEFORE_DEFAULT,
-    context_after: int = settings.RETRIEVAL_CONTEXT_AFTER_DEFAULT,
+    max_chars: int = retrieval_settings.RETRIEVAL_MAX_CHARS_DEFAULT,
+    semantic_top_k: int = retrieval_settings.RETRIEVAL_SEMANTIC_TOP_K_DEFAULT,
+    lexical_top_k: int = retrieval_settings.RETRIEVAL_LEXICAL_TOP_K_DEFAULT,
+    compress_percentile: float = retrieval_settings.RETRIEVAL_COMPRESS_PERCENTILE_DEFAULT,
+    context_before: int = retrieval_settings.RETRIEVAL_CONTEXT_BEFORE_DEFAULT,
+    context_after: int = retrieval_settings.RETRIEVAL_CONTEXT_AFTER_DEFAULT,
     filter_host: str | None = None,
     filter_path_prefix: str | None = None,
     filter_language: str | None = None,
     filter_content_type: str | None = None,
     filter_status_code: int | None = None,
-    metadata_rank_boost: float = settings.RETRIEVAL_METADATA_RANK_BOOST_DEFAULT,
+    metadata_rank_boost: float = retrieval_settings.RETRIEVAL_METADATA_RANK_BOOST_DEFAULT,
 ) -> Dict[str, Any]:
     """Hybrid page-level retrieval (MCP tool: vector_db) that returns both snippet + conditional compression.
 
@@ -529,13 +529,13 @@ async def vector_db(
 
     retrieval_query = (
         _expand_query_rule_based(query)
-        if settings.RETRIEVAL_RULE_BASED_QUERY_EXPANSION_ENABLED
+        if retrieval_settings.RETRIEVAL_RULE_BASED_QUERY_EXPANSION_ENABLED
         else query
     )
     query_bundle = QueryBundle(retrieval_query)
     use_query_expansion = (
-        settings.QUERY_EXPANSION_ENABLED
-        and settings.QUERY_EXPANSION_NUM_QUERIES > 1
+        retrieval_settings.QUERY_EXPANSION_ENABLED
+        and retrieval_settings.QUERY_EXPANSION_NUM_QUERIES > 1
     )
 
     async def _retrieve_nodes(
@@ -552,7 +552,7 @@ async def vector_db(
                 retrievers=[vector_retriever, bm25_retriever],
                 mode=FUSION_MODES.RECIPROCAL_RANK,
                 similarity_top_k=current_n_results,
-                num_queries=settings.QUERY_EXPANSION_NUM_QUERIES,
+                num_queries=retrieval_settings.QUERY_EXPANSION_NUM_QUERIES,
                 use_async=True,
             )
             candidate_nodes: List[NodeWithScore] = await hybrid.aretrieve(query_bundle)
@@ -590,19 +590,19 @@ async def vector_db(
             "detail": str(exc),
         }
 
-    adaptive_enabled = bool(settings.RETRIEVAL_ADAPTIVE_ENABLED)
+    adaptive_enabled = bool(retrieval_settings.RETRIEVAL_ADAPTIVE_ENABLED)
     escalation_semantic_top_k = _clamp_int(
-        settings.RETRIEVAL_ESCALATION_SEMANTIC_TOP_K,
+        retrieval_settings.RETRIEVAL_ESCALATION_SEMANTIC_TOP_K,
         min_value=1,
         max_value=200,
     )
     escalation_lexical_top_k = _clamp_int(
-        settings.RETRIEVAL_ESCALATION_LEXICAL_TOP_K,
+        retrieval_settings.RETRIEVAL_ESCALATION_LEXICAL_TOP_K,
         min_value=1,
         max_value=200,
     )
     min_confidence_to_skip_escalation = _clamp_float(
-        settings.RETRIEVAL_MIN_CONFIDENCE_TO_SKIP_ESCALATION,
+        retrieval_settings.RETRIEVAL_MIN_CONFIDENCE_TO_SKIP_ESCALATION,
         min_value=0.0,
         max_value=1.0,
     )
@@ -631,12 +631,12 @@ async def vector_db(
             retrieval_escalated = True
 
     max_compressed_results = _clamp_int(
-        settings.RETRIEVAL_MAX_COMPRESSED_RESULTS,
+        retrieval_settings.RETRIEVAL_MAX_COMPRESSED_RESULTS,
         min_value=0,
         max_value=20,
     )
     min_snippet_query_coverage = _clamp_float(
-        settings.RETRIEVAL_MIN_SNIPPET_QUERY_COVERAGE,
+        retrieval_settings.RETRIEVAL_MIN_SNIPPET_QUERY_COVERAGE,
         min_value=0.0,
         max_value=1.0,
     )
@@ -736,7 +736,7 @@ async def vector_db(
         "filter_status_code": filter_status_code,
         "metadata_rank_boost": metadata_rank_boost,
         "adaptive_enabled": adaptive_enabled,
-        "rule_based_query_expansion_enabled": settings.RETRIEVAL_RULE_BASED_QUERY_EXPANSION_ENABLED,
+        "rule_based_query_expansion_enabled": retrieval_settings.RETRIEVAL_RULE_BASED_QUERY_EXPANSION_ENABLED,
         "retrieval_confidence": round(retrieval_confidence, 4),
         "retrieval_escalated": retrieval_escalated,
         "min_confidence_to_skip_escalation": min_confidence_to_skip_escalation,

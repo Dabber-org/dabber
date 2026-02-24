@@ -35,7 +35,10 @@ Tool name: `vector_db`
  
 All "real" implementation lives at the `server/` root:
 - `app.py`: FastMCP server entrypoint and mode wiring
-- `settings.py`: env-based settings (loads `.env`)
+- `settings.py`: core env template/settings (loads `.env`)
+- `retrieval/config.py`: retrieval-specific env schema/defaults
+- `pipeline/config.py`: pipeline/indexing env schema/defaults
+- `storage/config.py`: storage/Qdrant env schema/defaults
 - `pipeline/static_pipeline.py`: static scrape/index pipeline
 - `storage/qdrant.py`: Qdrant collection lifecycle (`ensure_collection`)
 - `retrieval/hybrid_search.py`: `vector_db` tool + init
@@ -79,6 +82,7 @@ Server listens on `http://localhost:8000`.
 ## Configuration
 
 Configured via `.env` (see `.env.example`).
+Core app env schema lives in `settings.py`; feature-specific env schemas live in `*/config.py` modules (for example retrieval, pipeline, and storage).
 
 Important vars:
 - `IS_STATIC_ENABLED`: run static pipeline in background on startup

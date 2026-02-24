@@ -16,6 +16,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from pipeline.config import pipeline_settings
 from settings import settings
 
 TERMINAL_STATES = {"completed", "failed", "cancelled"}
@@ -219,7 +220,7 @@ def _crawl_config() -> dict[str, Any]:
     return {
         "target_url": target_url,
         "firecrawl_base_url": firecrawl_base_url,
-        "output_dir": Path(settings.SCRAPE_DATASET_DIR).resolve(),
+        "output_dir": Path(pipeline_settings.SCRAPE_DATASET_DIR).resolve(),
         "api_key": os.getenv("FIRECRAWL_API_KEY", "").strip(),
         "stream_batch_size": _env_int(
             "SCRAPE_STREAM_BATCH_SIZE", 500, minimum=1, maximum=5000

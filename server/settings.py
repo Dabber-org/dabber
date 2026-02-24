@@ -1,8 +1,8 @@
-"""App settings loaded from environment variables.
+"""Core app settings loaded from environment variables.
 
-We use `pydantic-settings` so local development can rely on a `.env` file.
-All fields have safe defaults so importing modules does not crash; the server
-decides at runtime which features are enabled based on these values.
+This module is the canonical env template for server-wide runtime settings.
+Feature-specific settings (for example retrieval tuning) live in their own
+modules so each subsystem can own its env schema independently.
 """
 
 from __future__ import annotations
@@ -12,13 +12,6 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SERVER_ROOT = Path(__file__).resolve().parent
-
-
-def _resolve_server_path(value: str) -> str:
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = SERVER_ROOT / path
-    return str(path.resolve())
 
 
 class Settings(BaseSettings):
@@ -42,50 +35,8 @@ class Settings(BaseSettings):
     # - true: force full rebuild (scrape + embed) on every startup.
     RESCRAPE: bool = False
 
-    # Query expansion (LLM-generated variants) for hybrid retrieval.
-    QUERY_EXPANSION_ENABLED: bool = False
-    QUERY_EXPANSION_NUM_QUERIES: int = 4
-
-    # Retrieval defaults (used by the vector_db tool when callers omit args).
-    # These values favor balanced quality/cost on noisy enterprise pages.
-    RETRIEVAL_N_RESULTS_DEFAULT: int = 8
-    RETRIEVAL_MAX_CHARS_DEFAULT: int = 2000
-    RETRIEVAL_SEMANTIC_TOP_K_DEFAULT: int = 36
-    RETRIEVAL_LEXICAL_TOP_K_DEFAULT: int = 36
-    RETRIEVAL_COMPRESS_PERCENTILE_DEFAULT: float = 0.2
-    RETRIEVAL_CONTEXT_BEFORE_DEFAULT: int = 1
-    RETRIEVAL_CONTEXT_AFTER_DEFAULT: int = 1
-    RETRIEVAL_METADATA_RANK_BOOST_DEFAULT: float = 0.35
-
-    # Adaptive retrieval: run a cheap first pass and escalate only when confidence is low.
-    RETRIEVAL_ADAPTIVE_ENABLED: bool = True
-    RETRIEVAL_ESCALATION_SEMANTIC_TOP_K: int = 80
-    RETRIEVAL_ESCALATION_LEXICAL_TOP_K: int = 80
-    RETRIEVAL_MIN_CONFIDENCE_TO_SKIP_ESCALATION: float = 0.65
-
-    # Compression cost controls.
-    RETRIEVAL_MAX_COMPRESSED_RESULTS: int = 3
-    RETRIEVAL_MIN_SNIPPET_QUERY_COVERAGE: float = 0.35
-
-    # Lightweight deterministic query expansion (zero LLM cost).
-    RETRIEVAL_RULE_BASED_QUERY_EXPANSION_ENABLED: bool = True
-
     # Model/config knobs.
     OPENAI_API_KEY: str = ""
-    EMBED_MODEL_NAME: str = "BAAI/bge-base-en-v1.5"
-    # Console progress bars for indexing; disable by default to avoid interleaved
-    # output with async HTTP logs in long-running ingestion.
-    INDEX_SHOW_PROGRESS: bool = False
-
-    # Qdrant configuration.
-    QDRANT_URL: str = "http://localhost:6333"
-    QDRANT_COLLECTION_NAME: str = "latest"
-
-    # Where crawlee writes scraped JSON pages (and __metadata__.json).
-    SCRAPE_STORAGE_DIR: str = "./scrape/storage"
-    SCRAPE_DATASET_DIR: str = "./scrape/storage/datasets/default"
 
 
 settings = Settings()
-settings.SCRAPE_STORAGE_DIR = _resolve_server_path(settings.SCRAPE_STORAGE_DIR)
-settings.SCRAPE_DATASET_DIR = _resolve_server_path(settings.SCRAPE_DATASET_DIR)

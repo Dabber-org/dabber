@@ -11,11 +11,11 @@ from functools import lru_cache
 from qdrant_client import QdrantClient, models
 from qdrant_client.models import Distance
 
-from settings import settings
+from storage.config import storage_settings
 
 
-QDRANT_URL = settings.QDRANT_URL
-COLLECTION_NAME = settings.QDRANT_COLLECTION_NAME
+QDRANT_URL = storage_settings.QDRANT_URL
+COLLECTION_NAME = storage_settings.QDRANT_COLLECTION_NAME
 
 # `BAAI/bge-base-en-v1.5` embedding dimension.
 VECTOR_SIZE = 768
